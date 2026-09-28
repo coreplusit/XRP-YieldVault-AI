@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-vault-bg text-vault-text antialiased;
+  }
+}
+
+@layer utilities {
+  .glass-panel {
+    @apply border border-slate-800/60 bg-vault-surface/40 backdrop-blur-xl;
+  }
+
+  .glass-panel-hover {
+    @apply transition-all duration-300 hover:border-vault-teal/30 hover:shadow-neon-sm;
+  }
+
+  .text-gradient-neon {
+    @apply bg-gradient-neon bg-clip-text text-transparent;
+  }
+}
