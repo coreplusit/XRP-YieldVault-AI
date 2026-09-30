@@ -34,10 +34,9 @@ import {
   isStaleWeb3AuthSessionError,
   isUserCancellationError,
 } from "@/lib/web3auth/xrpl";
-import {
-  syncWeb3AuthUser,
-  type YieldVaultUser,
-} from "@/lib/supabase/users";
+import { establishYieldVaultSession } from "@/lib/auth/sessionClient";
+import { applyYieldVaultSession } from "@/lib/supabase/client";
+import type { YieldVaultUser } from "@/lib/supabase/users";
 
 /**
  * OpenLogin adapter key.
@@ -200,10 +199,10 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
 
       let dbUser: YieldVaultUser | null = null;
       try {
-        dbUser = await syncWeb3AuthUser({
-          email: userInfo.email ?? null,
-          xrplAddress,
-        });
+        dbUser = await establishYieldVaultSession(
+          activeProvider,
+          userInfo.email ?? null,
+        );
       } catch (syncError: unknown) {
         const message = toErrorMessage(syncError, "Supabase sync failed");
         logAuthIssue("User sync warning", message);
@@ -438,7 +437,7 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
    * Used by History / Dashboard when dbUser was null after a transient RLS/network miss.
    */
   const ensureDbUser = useCallback(async (): Promise<YieldVaultUser | null> => {
-    if (!session?.xrplAddress) {
+    if (!session?.xrplAddress || !provider) {
       return null;
     }
     if (session.dbUser) {
@@ -446,10 +445,7 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
     }
 
     try {
-      const dbUser = await syncWeb3AuthUser({
-        email: session.email,
-        xrplAddress: session.xrplAddress,
-      });
+      const dbUser = await establishYieldVaultSession(provider, session.email);
       setSession((current) =>
         current
           ? {
@@ -466,7 +462,7 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
       setError(message);
       return null;
     }
-  }, [session]);
+  }, [provider, session]);
 
   /**
    * Logs out of Web3Auth and clears local session state.
@@ -487,6 +483,7 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
         setError(message);
       }
     } finally {
+      applyYieldVaultSession(null);
       setProvider(null);
       setSession(null);
     }

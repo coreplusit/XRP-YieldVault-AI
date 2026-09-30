@@ -20,6 +20,7 @@ import { CopyButton } from "@/components/ui/CopyButton";
 import { Toast, type ToastMessage } from "@/components/ui/Toast";
 import { useVaultData } from "@/context/VaultDataContext";
 import { useWeb3Auth } from "@/context/Web3AuthContext";
+import { yieldVaultSessionHeaders } from "@/lib/auth/sessionClient";
 import { appConfig } from "@/lib/config/env";
 import type { YieldVaultUser } from "@/lib/supabase/users";
 import { truncateTxHash, truncateXrplAddress } from "@/lib/web3auth/xrpl";
@@ -93,7 +94,10 @@ export function ProfileClient() {
     try {
       const response = await fetch("/api/xrpl/faucet", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...yieldVaultSessionHeaders(),
+        },
         body: JSON.stringify({ address: session.xrplAddress }),
       });
       const payload = (await response.json()) as FaucetApiResponse;

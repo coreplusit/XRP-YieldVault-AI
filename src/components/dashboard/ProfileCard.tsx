@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { CopyButton } from "@/components/ui/CopyButton";
+import { yieldVaultSessionHeaders } from "@/lib/auth/sessionClient";
 import { appConfig } from "@/lib/config/env";
 import type { VaultDepositStats } from "@/lib/supabase/deposits";
 import type { YieldVaultUser } from "@/lib/supabase/users";
@@ -134,7 +135,10 @@ export function ProfileCard({
     try {
       const response = await fetch("/api/xrpl/faucet", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...yieldVaultSessionHeaders(),
+        },
         body: JSON.stringify({ address: xrplAddress }),
       });
 

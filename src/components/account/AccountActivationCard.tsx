@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useCallback, useState } from "react";
 
+import { yieldVaultSessionHeaders } from "@/lib/auth/sessionClient";
 import { appConfig } from "@/lib/config/env";
 
 const FAUCET_CLAIM_XRP = appConfig.vault.faucetClaimXrp;
@@ -121,7 +122,10 @@ export function AccountActivationCard({
     try {
       const response = await fetch("/api/xrpl/faucet", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...yieldVaultSessionHeaders(),
+        },
         body: JSON.stringify({ address: xrplAddress }),
       });
       const payload = (await response.json()) as FaucetApiResponse;

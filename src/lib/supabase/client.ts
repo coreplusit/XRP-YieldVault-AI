@@ -21,17 +21,40 @@ export function createBrowserSupabaseClient(): SupabaseClient {
     );
   }
 
+  const headers: Record<string, string> = {};
+  if (sessionToken) {
+    headers["x-yieldvault-session"] = sessionToken;
+  }
+
   return createClient(url.trim(), anonKey.trim(), {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
     },
+    global: { headers },
   });
 }
 
 /** Lazy singleton browser client for shared client-side usage. */
 let browserClient: SupabaseClient | null = null;
+let sessionToken: string | null = null;
+
+/**
+ * Returns the wallet-backed session token attached to Supabase requests.
+ */
+export function getYieldVaultSessionToken(): string | null {
+  return sessionToken;
+}
+
+/**
+ * Attaches or clears the session token and rebuilds the browser client.
+ * @param token - Token from POST /api/auth/session, or null on logout.
+ */
+export function applyYieldVaultSession(token: string | null): void {
+  sessionToken = token;
+  browserClient = null;
+}
 
 /**
  * Returns a shared browser Supabase client instance.

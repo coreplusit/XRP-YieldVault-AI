@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
+import { verifySessionToken } from "@/lib/auth/sessionToken";
 import { appConfig } from "@/lib/config/env";
 import { getXrplFaucetUrl } from "@/lib/xrpl/escrow";
+
+const recentClaims = new Map<string, number>();
+const CLAIM_COOLDOWN_MS = 45_000;
 
 interface FaucetRequestBody {
   address?: unknown;
@@ -36,10 +40,37 @@ export async function POST(request: Request): Promise<NextResponse> {
   const address =
     typeof body.address === "string" ? body.address.trim() : "";
 
-  if (!address.startsWith("r") || address.length < 25) {
+  if (!/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(address)) {
     return NextResponse.json(
       { ok: false, error: "A valid XRPL classic address is required." },
       { status: 400 },
+    );
+  }
+
+  let session;
+  try {
+    session = verifySessionToken(request.headers.get("x-yieldvault-session"));
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error ? error.message : "Session secret is not configured.";
+    return NextResponse.json({ ok: false, error: message }, { status: 503 });
+  }
+
+  if (!session || session.xrplAddress !== address) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Sign in is required before claiming Testnet XRP.",
+      },
+      { status: 401 },
+    );
+  }
+
+  const lastClaim = recentClaims.get(address) ?? 0;
+  if (Date.now() - lastClaim < CLAIM_COOLDOWN_MS) {
+    return NextResponse.json(
+      { ok: false, error: "Please wait before claiming Testnet XRP again." },
+      { status: 429 },
     );
   }
 
@@ -77,6 +108,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       );
     }
 
+    recentClaims.set(address, Date.now());
     const data = (payload ?? {}) as FaucetSuccessBody;
     const fundedAddress =
       data.account?.classicAddress ?? data.account?.address ?? address;
