@@ -1,36 +1,43 @@
 "use client";
 
 import { ExternalLink, Loader2, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 
 import { CopyButton } from "@/components/ui/CopyButton";
+import { TableSkeleton } from "@/components/ui/PageSkeleton";
 import { useWeb3Auth } from "@/context/Web3AuthContext";
 import {
   buildSampleInitializationEvents,
   fetchUserActivityTimeline,
   type ActivityActionType,
   type ActivityLogItem,
-  type ActivityStatus,
 } from "@/lib/supabase/activity";
-import { truncateTxHash } from "@/lib/web3auth/xrpl";
+import { syncIncomingXrpTransfers } from "@/lib/supabase/transfers";
+import { truncateTxHash, truncateXrplAddress } from "@/lib/web3auth/xrpl";
+import {
+  fetchAccountTransactions,
+  mergeLedgerIntoActivity,
+} from "@/lib/xrpl/accountTransactions";
 import { getXrplExplorerTxUrl } from "@/lib/xrpl/escrow";
 
 type HistoryFilter =
   | "all"
   | "deposit"
+  | "sent"
+  | "received"
   | "unlock"
   | "vote"
   | "delegation"
-  | "withdraw"
   | "sample";
 
 const FILTERS: readonly { id: HistoryFilter; label: string }[] = [
   { id: "all", label: "All" },
-  { id: "deposit", label: "Deposits" },
+  { id: "received", label: "Received" },
+  { id: "sent", label: "Sent" },
+  { id: "deposit", label: "Escrow" },
   { id: "unlock", label: "Unlocks" },
   { id: "vote", label: "DAO Votes" },
   { id: "delegation", label: "Delegation" },
-  { id: "withdraw", label: "Withdrawals" },
   { id: "sample", label: "Init" },
 ] as const;
 
@@ -45,10 +52,13 @@ function matchesFilter(
 ): boolean {
   if (filter === "all") return true;
   if (filter === "deposit") return item.actionType === "Deposit";
+  if (filter === "sent") {
+    return item.actionType === "Sent" || item.actionType === "Withdraw";
+  }
+  if (filter === "received") return item.actionType === "Received";
   if (filter === "unlock") return item.actionType === "Escrow Unlock";
   if (filter === "vote") return item.actionType === "DAO Vote";
   if (filter === "delegation") return item.actionType === "Delegation";
-  if (filter === "withdraw") return item.actionType === "Withdraw";
   return item.source === "sample";
 }
 
@@ -57,6 +67,12 @@ function matchesFilter(
  * @param actionType - Unified activity action.
  */
 function actionBadgeClass(actionType: ActivityActionType): string {
+  if (actionType === "Received") {
+    return "border-emerald-400/40 bg-emerald-400/10 text-emerald-300";
+  }
+  if (actionType === "Sent" || actionType === "Withdraw") {
+    return "border-amber-400/40 bg-amber-400/10 text-amber-200";
+  }
   if (actionType === "Deposit") {
     return "border-vault-teal/30 bg-vault-teal/10 text-vault-teal";
   }
@@ -69,29 +85,22 @@ function actionBadgeClass(actionType: ActivityActionType): string {
   if (actionType === "Delegation") {
     return "border-violet-400/30 bg-violet-400/10 text-violet-200";
   }
-  if (actionType === "Withdraw") {
-    return "border-rose-400/30 bg-rose-400/10 text-rose-300";
-  }
   return "border-slate-500/40 bg-slate-500/10 text-slate-300";
 }
 
 /**
- * Badge styles for validation / success / sample status.
- * @param status - Activity status label.
+ * User-facing type label for the history table.
+ * @param actionType - Unified activity action.
  */
-function statusBadgeClass(status: ActivityStatus): string {
-  if (status === "Validated" || status === "Active") {
-    return "border-vault-teal/30 bg-vault-teal/10 text-vault-teal";
-  }
-  if (status === "Success") {
-    return "border-emerald-400/30 bg-emerald-400/10 text-emerald-300";
-  }
-  return "border-slate-500/40 bg-slate-500/10 text-slate-300";
+function typeLabel(actionType: ActivityActionType): string {
+  if (actionType === "Deposit") return "Escrow Deposit";
+  if (actionType === "Sent" || actionType === "Withdraw") return "Sent";
+  if (actionType === "Received") return "Received";
+  return actionType;
 }
 
 /**
- * Transaction History — unified timeline from vault_deposits, user_votes,
- * and user_delegations, with sample init fallback for empty accounts.
+ * Transaction History — XRPL account_tx payments merged with Supabase logs.
  */
 export function HistoryClient() {
   const { isConnected, isInitializing, session, ensureDbUser } =
@@ -105,6 +114,7 @@ export function HistoryClient() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [syncWarning, setSyncWarning] = useState<string | null>(null);
   const [filter, setFilter] = useState<HistoryFilter>("all");
+  const [isFilterPending, startFilterTransition] = useTransition();
 
   const loadActivity = useCallback(async (): Promise<void> => {
     setLoadError(null);
@@ -139,9 +149,45 @@ export function HistoryClient() {
         getExplorerTxUrl: getXrplExplorerTxUrl,
         accountCreatedAt: createdAt,
       });
-      setItems(result.items);
-      setLiveCount(result.liveCount);
-      setUsedSampleFallback(result.usedSampleFallback);
+      let nextItems = result.items;
+      const address = session?.xrplAddress;
+      if (address) {
+        try {
+          const ledger = await fetchAccountTransactions(address);
+          nextItems = mergeLedgerIntoActivity(
+            result.items,
+            ledger,
+            getXrplExplorerTxUrl,
+          );
+          const knownHashes = new Set(
+            result.items
+              .map((item) => item.txHash)
+              .filter((hash): hash is string => Boolean(hash)),
+          );
+          await syncIncomingXrpTransfers(
+            userId,
+            ledger
+              .filter((entry) => entry.kind === "received" && entry.counterparty)
+              .map((entry) => ({
+                hash: entry.hash,
+                counterparty: entry.counterparty ?? "",
+                amountXrp: entry.amountXrp,
+                occurredAt: entry.occurredAt,
+              })),
+            knownHashes,
+          );
+        } catch (ledgerError: unknown) {
+          setSyncWarning(
+            ledgerError instanceof Error
+              ? `On-chain history is unavailable (${ledgerError.message}). Showing saved logs.`
+              : "On-chain history is unavailable. Showing saved logs.",
+          );
+        }
+      }
+      const liveItems = nextItems.filter((item) => item.source === "live");
+      setItems(liveItems.length > 0 ? liveItems : nextItems);
+      setLiveCount(liveItems.length);
+      setUsedSampleFallback(liveItems.length === 0);
     } catch (fetchError: unknown) {
       setLoadError(
         fetchError instanceof Error
@@ -155,7 +201,12 @@ export function HistoryClient() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [ensureDbUser, session?.dbUser?.created_at, session?.dbUser?.id]);
+  }, [
+    ensureDbUser,
+    session?.dbUser?.created_at,
+    session?.dbUser?.id,
+    session?.xrplAddress,
+  ]);
 
   useEffect(() => {
     if (!isConnected) return;
@@ -177,12 +228,15 @@ export function HistoryClient() {
     return {
       all: items.length,
       deposit: items.filter((item) => item.actionType === "Deposit").length,
+      sent: items.filter(
+        (item) => item.actionType === "Sent" || item.actionType === "Withdraw",
+      ).length,
+      received: items.filter((item) => item.actionType === "Received").length,
       unlock: items.filter((item) => item.actionType === "Escrow Unlock")
         .length,
       vote: items.filter((item) => item.actionType === "DAO Vote").length,
       delegation: items.filter((item) => item.actionType === "Delegation")
         .length,
-      withdraw: items.filter((item) => item.actionType === "Withdraw").length,
       sample: items.filter((item) => item.source === "sample").length,
     };
   }, [items]);
@@ -206,8 +260,9 @@ export function HistoryClient() {
             Transaction History
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-vault-muted">
-            Unified activity from XRPL escrow deposits, DAO votes, and voting
-            power delegations synced to your YieldVault account.
+            Live XRPL payments (sent and received), escrow deposits, and DAO
+            activity for this wallet. Incoming transfers are saved to your
+            transaction log on load.
           </p>
         </div>
         <button
@@ -261,7 +316,11 @@ export function HistoryClient() {
               type="button"
               role="tab"
               aria-selected={active}
-              onClick={() => setFilter(item.id)}
+              onClick={() => {
+                startFilterTransition(() => {
+                  setFilter(item.id);
+                });
+              }}
               className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm transition-colors ${
                 active
                   ? "border-vault-teal/40 bg-vault-teal/10 text-white"
@@ -283,12 +342,13 @@ export function HistoryClient() {
         })}
       </div>
 
-      <section className="glass-panel overflow-hidden rounded-2xl">
+      <section
+        className={`glass-panel overflow-hidden rounded-2xl ${
+          isFilterPending ? "opacity-70" : ""
+        }`}
+      >
         {isLoading && items.length === 0 ? (
-          <div className="flex items-center justify-center gap-2 px-4 py-16 text-sm text-vault-muted">
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-            Syncing user & loading activity logs…
-          </div>
+          <TableSkeleton rows={6} />
         ) : loadError && items.length === 0 ? (
           <div className="px-4 py-10 text-center">
             <p className="text-sm text-rose-300">{loadError}</p>
@@ -310,11 +370,11 @@ export function HistoryClient() {
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-slate-800/60 bg-vault-bg/50 text-[10px] uppercase tracking-wider text-vault-muted">
                 <tr>
-                  <th className="px-4 py-3 font-medium">Date / Time</th>
-                  <th className="px-4 py-3 font-medium">Action Type</th>
-                  <th className="px-4 py-3 font-medium">Amount / VP</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">TX Hash / Explorer</th>
+                  <th className="px-4 py-3 font-medium">Timestamp</th>
+                  <th className="px-4 py-3 font-medium">Type</th>
+                  <th className="px-4 py-3 font-medium">Amount (XRP)</th>
+                  <th className="px-4 py-3 font-medium">Counterparty</th>
+                  <th className="px-4 py-3 font-medium">Transaction Hash</th>
                 </tr>
               </thead>
               <tbody>
@@ -333,18 +393,31 @@ export function HistoryClient() {
                       <span
                         className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs ${actionBadgeClass(item.actionType)}`}
                       >
-                        {item.actionType}
+                        {typeLabel(item.actionType)}
                       </span>
                     </td>
-                    <td className="max-w-[18rem] px-4 py-3 text-xs text-white">
-                      <span className="line-clamp-2 font-mono">{item.detail}</span>
-                    </td>
-                    <td className="px-4 py-3">
+                    <td className="max-w-[14rem] px-4 py-3 text-xs">
                       <span
-                        className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs ${statusBadgeClass(item.status)}`}
+                        className={`line-clamp-2 font-mono ${
+                          item.flow === "in"
+                            ? "text-emerald-300"
+                            : item.flow === "out"
+                              ? "text-amber-200"
+                              : "text-white"
+                        }`}
                       >
-                        {item.status}
+                        {item.detail}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-vault-muted">
+                      {item.counterparty ? (
+                        <span title={item.counterparty}>
+                          {item.flow === "in" ? "From " : item.flow === "out" ? "To " : ""}
+                          {truncateXrplAddress(item.counterparty, 6, 4)}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       {item.txHash ? (

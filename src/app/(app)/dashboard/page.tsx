@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 
 import { DashboardClient } from "@/components/dashboard/DashboardClient";
+import { PageSkeleton } from "@/components/ui/PageSkeleton";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -9,5 +11,9 @@ export const metadata: Metadata = {
 };
 
 export default function DashboardPage() {
-  return <DashboardClient />;
+  return (
+    <Suspense fallback={<PageSkeleton titleWidth="w-40" cards={3} />}>
+      <DashboardClient />
+    </Suspense>
+  );
 }

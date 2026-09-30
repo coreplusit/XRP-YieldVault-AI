@@ -3,65 +3,21 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  BarChart3,
-  History,
-  Landmark,
-  LayoutDashboard,
   Loader2,
   LogOut,
   Menu,
   Shield,
-  UserRound,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { APP_NAV, Sidebar } from "@/components/layout/Sidebar";
 import { ChainIcon } from "@/components/ui/ChainIcon";
 import { PitchModeWidget } from "@/components/ui/PitchModeWidget";
 import { VaultDataProvider } from "@/context/VaultDataContext";
 import { useWeb3Auth } from "@/context/Web3AuthContext";
 import { appConfig } from "@/lib/config/env";
 import { truncateXrplAddress } from "@/lib/web3auth/xrpl";
-
-interface AppNavItem {
-  href: string;
-  label: string;
-  description: string;
-  icon: React.ReactNode;
-}
-
-const APP_NAV: readonly AppNavItem[] = [
-  {
-    href: "/dashboard",
-    label: "Dashboard",
-    description: "Yield vaults & escrow deposit",
-    icon: <LayoutDashboard className="h-4 w-4" aria-hidden="true" />,
-  },
-  {
-    href: "/governance",
-    label: "DAO Governance",
-    description: "Proposals & voting power",
-    icon: <Landmark className="h-4 w-4" aria-hidden="true" />,
-  },
-  {
-    href: "/profile",
-    label: "Profile & Security",
-    description: "Account & self-custody",
-    icon: <UserRound className="h-4 w-4" aria-hidden="true" />,
-  },
-  {
-    href: "/history",
-    label: "Transaction History",
-    description: "On-chain XRPL logs",
-    icon: <History className="h-4 w-4" aria-hidden="true" />,
-  },
-  {
-    href: "/analytics",
-    label: "Yield Calculator",
-    description: "APY estimates",
-    icon: <BarChart3 className="h-4 w-4" aria-hidden="true" />,
-  },
-] as const;
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -120,7 +76,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       {/* Desktop sidebar */}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-slate-800/60 bg-vault-bg/80 backdrop-blur-xl lg:flex">
         <div className="flex h-16 items-center gap-2.5 border-b border-slate-800/60 px-5">
-          <Link href="/dashboard" prefetch className="group flex items-center gap-2.5">
+          <Link href="/dashboard" prefetch={true} className="group flex items-center gap-2.5">
             <ChainIcon className="h-7 w-7 transition-transform duration-300 group-hover:scale-110" />
             <div>
               <p className="text-sm font-semibold text-white">XRP YieldVault</p>
@@ -131,35 +87,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           </Link>
         </div>
 
-        <nav className="flex-1 space-y-1 p-3" aria-label="App navigation">
-          {APP_NAV.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                prefetch
-                className={`flex items-start gap-3 rounded-xl px-3 py-3 transition-colors ${
-                  active
-                    ? "border border-vault-teal/30 bg-vault-teal/10 text-white"
-                    : "border border-transparent text-vault-muted hover:bg-white/5 hover:text-white"
-                }`}
-              >
-                <span
-                  className={`mt-0.5 ${active ? "text-vault-teal" : "text-vault-muted"}`}
-                >
-                  {item.icon}
-                </span>
-                <span>
-                  <span className="block text-sm font-medium">{item.label}</span>
-                  <span className="mt-0.5 block text-[11px] text-vault-muted">
-                    {item.description}
-                  </span>
-                </span>
-              </Link>
-            );
-          })}
-        </nav>
+        <Sidebar pathname={pathname} variant="desktop" />
 
         <div className="border-t border-slate-800/60 p-4">
           <div className="rounded-xl border border-slate-800/60 bg-vault-surface/40 px-3 py-2">
@@ -238,6 +166,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                     </div>
                     <Link
                       href="/profile"
+                      prefetch={true}
                       className="mt-1 flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-vault-muted hover:bg-white/5 hover:text-white"
                       role="menuitem"
                     >
@@ -261,29 +190,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
           {/* Mobile nav drawer */}
           {mobileNavOpen ? (
-            <nav
-              className="space-y-1 border-t border-slate-800/60 px-3 py-3 lg:hidden"
-              aria-label="Mobile app navigation"
-            >
-              {APP_NAV.map((item) => {
-                const active = pathname === item.href;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    prefetch
-                    className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm ${
-                      active
-                        ? "bg-vault-teal/10 text-white"
-                        : "text-vault-muted hover:bg-white/5 hover:text-white"
-                    }`}
-                  >
-                    {item.icon}
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </nav>
+            <Sidebar pathname={pathname} variant="mobile" />
           ) : null}
         </header>
 

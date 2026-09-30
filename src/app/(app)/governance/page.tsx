@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 
 import { GovernanceClient } from "@/components/governance/GovernanceClient";
+import { PageSkeleton } from "@/components/ui/PageSkeleton";
 
 export const metadata: Metadata = {
   title: "DAO Governance",
@@ -9,5 +11,9 @@ export const metadata: Metadata = {
 };
 
 export default function GovernancePage() {
-  return <GovernanceClient />;
+  return (
+    <Suspense fallback={<PageSkeleton titleWidth="w-48" cards={3} />}>
+      <GovernanceClient />
+    </Suspense>
+  );
 }

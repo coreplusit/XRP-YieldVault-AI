@@ -10,6 +10,9 @@ export interface XrpTransfer {
   amount_xrp: number;
   status: "success" | "failed";
   created_at: string;
+  /** Present after migration 007. Legacy rows are outgoing. */
+  direction: "sent" | "received";
+  counterparty_address: string | null;
 }
 
 export interface InsertXrpTransferInput {
@@ -38,6 +41,11 @@ function mapTransferRow(row: Record<string, unknown>): XrpTransfer {
     amount_xrp: Number(row.amount_xrp),
     status: row.status === "failed" ? "failed" : "success",
     created_at: String(row.created_at),
+    direction: row.direction === "received" ? "received" : "sent",
+    counterparty_address:
+      typeof row.counterparty_address === "string"
+        ? row.counterparty_address
+        : null,
   };
 }
 
@@ -86,19 +94,40 @@ export async function fetchUserXrpTransfers(
   const { data, error } = await supabase
     .from("xrp_transfers")
     .select(
-      "id, user_id, xrpl_tx_hash, destination_address, destination_tag, amount_xrp, status, created_at",
+      "id, user_id, xrpl_tx_hash, destination_address, destination_tag, amount_xrp, status, created_at, direction, counterparty_address",
     )
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
   if (error) {
+    const message = error.message.toLowerCase();
     // Soft-fail when migration 006 is not applied yet — History still works.
     if (
-      error.message.toLowerCase().includes("does not exist") ||
+      message.includes("does not exist") ||
       error.code === "42P01" ||
       error.code === "PGRST205"
     ) {
       return [];
+    }
+    // Migration 007 not applied yet — reload without the new columns.
+    if (
+      message.includes("direction") ||
+      message.includes("counterparty_address") ||
+      error.code === "42703"
+    ) {
+      const legacy = await supabase
+        .from("xrp_transfers")
+        .select(
+          "id, user_id, xrpl_tx_hash, destination_address, destination_tag, amount_xrp, status, created_at",
+        )
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false });
+      if (legacy.error) {
+        throw new Error(`Failed to load transfers: ${legacy.error.message}`);
+      }
+      return (legacy.data ?? []).map((row) =>
+        mapTransferRow(row as Record<string, unknown>),
+      );
     }
     throw new Error(`Failed to load transfers: ${error.message}`);
   }
@@ -106,4 +135,75 @@ export async function fetchUserXrpTransfers(
   return (data ?? []).map((row) =>
     mapTransferRow(row as Record<string, unknown>),
   );
+}
+
+export interface IncomingTransferLog {
+  hash: string;
+  counterparty: string;
+  amountXrp: number;
+  occurredAt: string;
+}
+
+/**
+ * Inserts incoming Payments that are on the ledger but missing from xrp_transfers.
+ * Duplicate hashes are ignored. Schema-without-direction falls back to a legacy insert.
+ * @param userId - public.users.id
+ * @param incoming - Received payments parsed from account_tx.
+ * @param knownHashes - Hashes already stored for this user.
+ */
+export async function syncIncomingXrpTransfers(
+  userId: string,
+  incoming: readonly IncomingTransferLog[],
+  knownHashes: ReadonlySet<string>,
+): Promise<void> {
+  const missing = incoming.filter(
+    (entry) => entry.hash && !knownHashes.has(entry.hash),
+  );
+  if (missing.length === 0) return;
+
+  const supabase = getSupabaseBrowserClient();
+  const rows = missing.map((entry) => ({
+    user_id: userId,
+    xrpl_tx_hash: entry.hash,
+    destination_address: entry.counterparty,
+    destination_tag: null,
+    amount_xrp: entry.amountXrp,
+    status: "success" as const,
+    created_at: entry.occurredAt,
+    direction: "received" as const,
+    counterparty_address: entry.counterparty,
+  }));
+
+  const primary = await supabase
+    .from("xrp_transfers")
+    .upsert(rows, { onConflict: "xrpl_tx_hash", ignoreDuplicates: true });
+
+  if (!primary.error) return;
+
+  const message = primary.error.message.toLowerCase();
+  const missingColumn =
+    message.includes("direction") ||
+    message.includes("counterparty_address") ||
+    primary.error.code === "42703";
+  if (!missingColumn) {
+    console.warn(
+      "[History] Incoming transfer sync skipped:",
+      primary.error.message,
+    );
+    return;
+  }
+
+  const legacyRows = rows.map(
+    ({ direction: _direction, counterparty_address: _counterparty, ...row }) =>
+      row,
+  );
+  const legacy = await supabase
+    .from("xrp_transfers")
+    .upsert(legacyRows, { onConflict: "xrpl_tx_hash", ignoreDuplicates: true });
+  if (legacy.error) {
+    console.warn(
+      "[History] Incoming transfer sync skipped:",
+      legacy.error.message,
+    );
+  }
 }

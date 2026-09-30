@@ -211,7 +211,6 @@ export function WithdrawModal({
       }
     },
     [
-      amount,
       balanceKnown,
       balanceXrp,
       destination,

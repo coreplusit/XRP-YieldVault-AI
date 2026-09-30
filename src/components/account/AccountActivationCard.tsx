@@ -13,6 +13,8 @@ import { useCallback, useState } from "react";
 
 import { appConfig } from "@/lib/config/env";
 
+const FAUCET_CLAIM_XRP = appConfig.vault.faucetClaimXrp;
+
 /** Mainnet account-activation reserve messaging (XRPL base reserve). */
 export const XRPL_ACTIVATION_RESERVE_XRP = 1;
 
@@ -36,6 +38,15 @@ interface AccountActivationCardProps {
    */
   onFaucetSuccess?: (amountXrp: number) => void;
   onFaucetError?: (message: string) => void;
+  /**
+   * Amount just credited by the faucet before the live balance refresh lands.
+   * Keeps the success state visible immediately after activation.
+   */
+  celebratedBalanceXrp?: number | null;
+  /** When set, an activated wallet shows the escrow CTA instead of a compact badge. */
+  onLockEscrow?: () => void;
+  /** Pulse the faucet claim button — it is the next required action. */
+  emphasizeClaim?: boolean;
   className?: string;
 }
 
@@ -51,6 +62,9 @@ export function AccountActivationCard({
   onCopied,
   onFaucetSuccess,
   onFaucetError,
+  celebratedBalanceXrp = null,
+  onLockEscrow,
+  emphasizeClaim = false,
   className = "",
 }: AccountActivationCardProps) {
   const [isCopying, setIsCopying] = useState<boolean>(false);
@@ -59,7 +73,13 @@ export function AccountActivationCard({
   const [fundError, setFundError] = useState<string | null>(null);
 
   const balanceKnown = balanceXrp !== null;
-  const isActivated = balanceKnown && balanceXrp > 0;
+  const liveBalance =
+    balanceKnown && balanceXrp > 0
+      ? balanceXrp
+      : celebratedBalanceXrp !== null && celebratedBalanceXrp > 0
+        ? celebratedBalanceXrp
+        : null;
+  const isActivated = liveBalance !== null && liveBalance > 0;
   const isTestnet = appConfig.xrpl.network !== "mainnet";
 
   const handleCopyAddress = useCallback(async (): Promise<void> => {
@@ -109,7 +129,7 @@ export function AccountActivationCard({
         throw new Error(payload.error ?? "Faucet funding failed.");
       }
 
-      const amountXrp = payload.amountXrp ?? 1000;
+      const amountXrp = payload.amountXrp ?? FAUCET_CLAIM_XRP;
       onFaucetSuccess?.(amountXrp);
     } catch (error: unknown) {
       const message =
@@ -121,7 +141,11 @@ export function AccountActivationCard({
     }
   }, [isTestnet, onFaucetError, onFaucetSuccess, xrplAddress]);
 
-  if (!balanceKnown && isBalanceLoading) {
+  if (
+    !balanceKnown &&
+    isBalanceLoading &&
+    !(celebratedBalanceXrp !== null && celebratedBalanceXrp > 0)
+  ) {
     return (
       <div
         className={`glass-panel mb-6 flex items-center gap-3 rounded-2xl border border-slate-800/60 px-4 py-3 text-sm text-vault-muted ${className}`}
@@ -135,7 +159,36 @@ export function AccountActivationCard({
     );
   }
 
-  if (isActivated) {
+  if (isActivated && onLockEscrow && liveBalance !== null) {
+    const shownBalance = liveBalance.toLocaleString(undefined, {
+      maximumFractionDigits: 6,
+    });
+    return (
+      <section
+        className={`mb-6 overflow-hidden rounded-2xl border border-vault-teal/40 bg-vault-teal/10 px-4 py-4 sm:px-5 ${className}`}
+        role="status"
+        aria-label="Account activated"
+      >
+        <p className="text-sm font-semibold text-white sm:text-base">
+          Account Activated! {FAUCET_CLAIM_XRP} Testnet XRP added to your
+          wallet.
+        </p>
+        <p className="mt-1 text-xs text-vault-muted">
+          Next, lock 100 XRP in the vault escrow. That unlocks 100 Voting Power
+          (VP) for DAO governance. Live balance: {shownBalance} XRP.
+        </p>
+        <button
+          type="button"
+          onClick={onLockEscrow}
+          className="onboarding-pulse mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-neon text-sm font-semibold text-vault-bg shadow-neon transition-all hover:brightness-110 sm:w-auto sm:px-5"
+        >
+          Step 3: Lock 100 XRP in Escrow
+        </button>
+      </section>
+    );
+  }
+
+  if (isActivated && liveBalance !== null) {
     return (
       <div
         className={`mb-6 flex items-start gap-3 rounded-2xl border border-vault-teal/30 bg-vault-teal/10 px-4 py-3 ${className}`}
@@ -150,7 +203,7 @@ export function AccountActivationCard({
           <p className="mt-0.5 text-xs text-vault-muted">
             Live balance{" "}
             <span className="font-mono text-vault-teal">
-              {balanceXrp.toLocaleString(undefined, {
+              {liveBalance.toLocaleString(undefined, {
                 maximumFractionDigits: 6,
               })}{" "}
               XRP
@@ -184,8 +237,8 @@ export function AccountActivationCard({
               <span className="font-mono text-amber-100">
                 {XRPL_ACTIVATION_RESERVE_XRP} XRP
               </span>{" "}
-              is required for on-chain reserve. On Testnet, use Option C for
-              instant faucet funding (~1000 XRP).
+              is required for on-chain reserve. On Testnet, use Option C to claim{" "}
+              {FAUCET_CLAIM_XRP} XRP and activate.
             </p>
           </div>
         </div>
@@ -201,17 +254,19 @@ export function AccountActivationCard({
               <Zap className="h-4 w-4 text-vault-cyan" aria-hidden="true" />
             </div>
             <p className="text-sm font-semibold text-white">
-              Claim Free Testnet XRP & Activate
+              Claim {FAUCET_CLAIM_XRP} Free Testnet XRP & Activate
             </p>
             <p className="mt-1 text-xs text-vault-muted">
-              Primary quick-action for testing — funds your wallet via the
-              official XRPL Testnet faucet (~1000 XRP).
+              Primary quick-action for testing — adds {FAUCET_CLAIM_XRP} Testnet
+              XRP so you can lock it in escrow and unlock {FAUCET_CLAIM_XRP} VP.
             </p>
             <button
               type="button"
               onClick={() => void handleClaimTestnetXrp()}
               disabled={isFunding}
-              className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-neon text-sm font-semibold text-vault-bg shadow-neon-sm transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+              className={`mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-neon text-sm font-semibold text-vault-bg shadow-neon-sm transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70 ${
+                emphasizeClaim ? "onboarding-pulse" : ""
+              }`}
             >
               {isFunding ? (
                 <>
@@ -219,10 +274,7 @@ export function AccountActivationCard({
                   Funding account with Testnet XRP…
                 </>
               ) : (
-                <>
-                  <Zap className="h-4 w-4" aria-hidden="true" />
-                  Claim Free Testnet XRP & Activate
-                </>
+                <>⚡ Claim {FAUCET_CLAIM_XRP} Free Testnet XRP & Activate</>
               )}
             </button>
             {fundError ? (

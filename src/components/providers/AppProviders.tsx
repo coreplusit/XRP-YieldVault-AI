@@ -2,6 +2,7 @@
 
 import { useEffect, type ReactNode } from "react";
 
+import { DevUserSwitcher } from "@/components/dev/DevUserSwitcher";
 import { Web3AuthProvider } from "@/context/Web3AuthContext";
 import { isIgnorableAuthBridgeError } from "@/lib/web3auth/xrpl";
 
@@ -58,5 +59,10 @@ function useSuppressInjectedWalletNoise(): void {
  */
 export function AppProviders({ children }: AppProvidersProps) {
   useSuppressInjectedWalletNoise();
-  return <Web3AuthProvider>{children}</Web3AuthProvider>;
+  return (
+    <Web3AuthProvider>
+      {children}
+      <DevUserSwitcher />
+    </Web3AuthProvider>
+  );
 }

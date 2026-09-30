@@ -1,8 +1,8 @@
 import type { XrplNetwork } from "@/types";
 
 /**
- * Runtime configuration sourced from environment variables.
- * All public constants and network endpoints must be defined here — never hardcoded in components.
+ * Runtime configuration. XRPL endpoints are hard-locked to Testnet in this file.
+ * Other public constants come from environment variables — never hardcode them in components.
  *
  * NOTE: NEXT_PUBLIC_* values must be read with static `process.env.NEXT_PUBLIC_*`
  * property access so Next.js can inline them into the client bundle.
@@ -21,27 +21,25 @@ export interface AppConfig {
     minDepositUsd: number;
     xrpUsdPrice: number;
     votingPowerPerDeposit: number;
+    /** Guided Testnet faucet claim shown in onboarding (XRP). */
+    faucetClaimXrp: number;
   };
   ai: {
     provider: string;
   };
 }
 
-const VALID_NETWORKS: readonly XrplNetwork[] = ["mainnet", "testnet", "devnet"];
+/**
+ * Hard-locked XRPL Testnet WebSocket. Every `xrpl.Client` connection uses this.
+ * Port 51233 is the Testnet WebSocket endpoint.
+ */
+export const XRPL_TESTNET_WS_URL = "wss://s.altnet.rippletest.net:51233";
 
 /**
- * Validates and normalizes the XRPL network identifier from env.
- * @param value - Raw network string from NEXT_PUBLIC_XRPL_NETWORK.
+ * Hard-locked XRPL Testnet JSON-RPC.
+ * Port 51234 is the HTTP API on the same Testnet cluster. Port 51233 is WebSocket-only.
  */
-function parseXrplNetwork(value: string | undefined, fallback: XrplNetwork): XrplNetwork {
-  const normalized = (value ?? fallback).toLowerCase() as XrplNetwork;
-  if (!VALID_NETWORKS.includes(normalized)) {
-    throw new Error(
-      `Invalid NEXT_PUBLIC_XRPL_NETWORK: "${value ?? ""}". Expected one of: ${VALID_NETWORKS.join(", ")}`,
-    );
-  }
-  return normalized;
-}
+export const XRPL_TESTNET_JSON_RPC_URL = "https://s.altnet.rippletest.net:51234";
 
 /**
  * Parses a numeric public environment variable from a static env value.
@@ -54,33 +52,13 @@ function parseNumber(raw: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-/**
- * Resolves a required static env value or throws with a descriptive error.
- * @param value - Statically accessed NEXT_PUBLIC_* value.
- * @param key - Variable name used in the error message.
- */
-function resolveRequired(value: string | undefined, key: string): string {
-  if (!value || value.trim() === "") {
-    throw new Error(
-      `Missing required environment variable: ${key}. Add it to .env.local and restart the dev server.`,
-    );
-  }
-  return value.trim();
-}
-
-/** Singleton application configuration resolved from `.env.local`. */
+/** Singleton application configuration. XRPL endpoints are locked to Testnet. */
 export const appConfig: AppConfig = {
   appName: process.env.NEXT_PUBLIC_APP_NAME?.trim() || "XRP YieldVault AI",
   xrpl: {
-    network: parseXrplNetwork(process.env.NEXT_PUBLIC_XRPL_NETWORK, "testnet"),
-    wsUrl: resolveRequired(
-      process.env.NEXT_PUBLIC_XRPL_WS_URL,
-      "NEXT_PUBLIC_XRPL_WS_URL",
-    ),
-    jsonRpcUrl: resolveRequired(
-      process.env.NEXT_PUBLIC_XRPL_JSON_RPC_URL,
-      "NEXT_PUBLIC_XRPL_JSON_RPC_URL",
-    ),
+    network: "testnet" satisfies XrplNetwork,
+    wsUrl: XRPL_TESTNET_WS_URL,
+    jsonRpcUrl: XRPL_TESTNET_JSON_RPC_URL,
   },
   vault: {
     apyPercent: parseNumber(process.env.NEXT_PUBLIC_VAULT_APY_PERCENT, 15),
@@ -90,8 +68,9 @@ export const appConfig: AppConfig = {
     xrpUsdPrice: parseNumber(process.env.NEXT_PUBLIC_XRP_USD_PRICE, 0.55),
     votingPowerPerDeposit: parseNumber(
       process.env.NEXT_PUBLIC_VOTING_POWER_PER_DEPOSIT,
-      100,
+      1,
     ),
+    faucetClaimXrp: 200,
   },
   ai: {
     provider: process.env.NEXT_PUBLIC_AI_PROVIDER?.trim() || "grok",

@@ -101,8 +101,9 @@ export function ProfileClient() {
         throw new Error(payload.error ?? "Faucet funding failed.");
       }
       showToast(
-        "Testnet XRP funded",
-        payload.message ?? `Added ~${payload.amountXrp ?? 1000} XRP.`,
+        "Account Activated!",
+        payload.message ??
+          `${payload.amountXrp ?? appConfig.vault.faucetClaimXrp} Testnet XRP added to your wallet.`,
       );
       window.setTimeout(() => void refreshBalance(true), 2500);
       window.setTimeout(() => void refreshBalance(true), 6000);
@@ -184,7 +185,7 @@ export function ProfileClient() {
         onFaucetSuccess={(amountXrp) => {
           showToast(
             "Account Activated!",
-            `${amountXrp} Testnet XRP added.`,
+            `${amountXrp} Testnet XRP added to your wallet.`,
           );
           void refreshBalance(true);
           window.setTimeout(() => void refreshBalance(true), 2500);
@@ -267,7 +268,7 @@ export function ProfileClient() {
               ) : (
                 <>
                   <Droplets className="h-4 w-4" aria-hidden="true" />
-                  Fund Account with Testnet XRP
+                  Claim {appConfig.vault.faucetClaimXrp} Free Testnet XRP & Activate
                 </>
               )}
             </button>

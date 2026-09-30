@@ -9,8 +9,13 @@ export type ActivityActionType =
   | "DAO Vote"
   | "Delegation"
   | "Withdraw"
+  | "Sent"
+  | "Received"
   | "Account Created"
   | "Faucet";
+
+/** Payment direction used to color the amount column. */
+export type ActivityFlow = "in" | "out" | "neutral";
 
 export type ActivityStatus = "Validated" | "Success" | "Active" | "Sample";
 
@@ -29,6 +34,10 @@ export interface ActivityLogItem {
   /** Explorer URL when txHash is present. */
   explorerUrl: string | null;
   source: ActivitySource;
+  /** Other party on a Payment or escrow. Null for votes and samples. */
+  counterparty?: string | null;
+  /** in = received, out = sent. */
+  flow?: ActivityFlow;
 }
 
 export interface UserActivityResult {
@@ -63,7 +72,7 @@ export function buildSampleInitializationEvents(
       id: "sample-faucet-1000",
       occurredAt: faucetAt,
       actionType: "Faucet",
-      detail: "Testnet Faucet Received 1000 XRP",
+      detail: "Testnet Faucet Received 200 XRP",
       status: "Sample",
       txHash: null,
       explorerUrl: null,
@@ -203,23 +212,25 @@ export async function fetchUserActivityTimeline(
   }
 
   for (const transfer of transfers) {
-    const tagPart =
-      transfer.destination_tag !== null
-        ? ` · tag ${transfer.destination_tag}`
-        : "";
+    const incoming = transfer.direction === "received";
+    const counterparty =
+      transfer.counterparty_address ?? transfer.destination_address;
+    const formatted = transfer.amount_xrp.toLocaleString(undefined, {
+      maximumFractionDigits: 6,
+    });
     items.push({
       id: `transfer-${transfer.id}`,
       occurredAt: transfer.created_at,
-      actionType: "Withdraw",
-      detail: `${transfer.amount_xrp.toLocaleString(undefined, {
-        maximumFractionDigits: 6,
-      })} XRP → ${transfer.destination_address.slice(0, 8)}…${tagPart}`,
+      actionType: incoming ? "Received" : "Sent",
+      detail: `${incoming ? "+" : "-"}${formatted} XRP`,
       status: transfer.status === "success" ? "Success" : "Validated",
       txHash: transfer.xrpl_tx_hash,
       explorerUrl: getExplorerTxUrl
         ? getExplorerTxUrl(transfer.xrpl_tx_hash)
         : null,
       source: "live",
+      counterparty,
+      flow: incoming ? "in" : "out",
     });
   }
 

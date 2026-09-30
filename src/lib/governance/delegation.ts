@@ -27,6 +27,14 @@ export interface VotingDelegation {
 
 export const DELEGATION_STORAGE_KEY = "yieldvault.vp.delegation.v1";
 
+/**
+ * Cached snapshot for useSyncExternalStore. JSON.parse returns a new object
+ * on every read, which React treats as a changed snapshot and loops.
+ */
+let cachedRaw: string | null = null;
+let cachedSnapshot: VotingDelegation | null = null;
+let delegationCacheReady = false;
+
 export const COMMUNITY_DELEGATES: readonly CommunityDelegateOption[] = [
   {
     id: "treasury-ai",
@@ -36,14 +44,14 @@ export const COMMUNITY_DELEGATES: readonly CommunityDelegateOption[] = [
   },
   {
     id: "yield-community",
-    name: "Yield Optimiser Community Delegate",
-    tagline: "Community steward focused on depositor net returns.",
+    name: "XRPL Foundation Delegate",
+    tagline: "Ecosystem representative aligned with XRPL standards.",
     address: "rYieldVaultCommunityDel2222222222",
   },
   {
     id: "safety-council",
-    name: "Protocol Safety Council",
-    tagline: "Conservative votes favoring risk controls and escrow integrity.",
+    name: "YieldVault Council",
+    tagline: "Protocol council focused on escrow integrity and yield policy.",
     address: "rYieldVaultSafetyCouncil33333333",
   },
 ] as const;
@@ -63,13 +71,12 @@ export function isValidClassicAddress(address: string): boolean {
 }
 
 /**
- * Reads delegation from localStorage (browser only).
+ * Parses a stored delegation payload into a snapshot, or null when invalid.
+ * @param raw - localStorage JSON string, or null when unset.
  */
-export function readStoredDelegation(): VotingDelegation | null {
-  if (typeof window === "undefined") return null;
+function parseStoredDelegation(raw: string | null): VotingDelegation | null {
+  if (!raw) return null;
   try {
-    const raw = window.localStorage.getItem(DELEGATION_STORAGE_KEY);
-    if (!raw) return null;
     const parsed = JSON.parse(raw) as VotingDelegation;
     if (
       !parsed ||
@@ -86,6 +93,22 @@ export function readStoredDelegation(): VotingDelegation | null {
 }
 
 /**
+ * Reads delegation from localStorage (browser only).
+ * Returns the same object until the stored string changes.
+ */
+export function readStoredDelegation(): VotingDelegation | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(DELEGATION_STORAGE_KEY);
+  if (delegationCacheReady && raw === cachedRaw) {
+    return cachedSnapshot;
+  }
+  cachedRaw = raw;
+  cachedSnapshot = parseStoredDelegation(raw);
+  delegationCacheReady = true;
+  return cachedSnapshot;
+}
+
+/**
  * Persists delegation to localStorage and notifies listeners.
  * @param delegation - Delegation snapshot to store, or null to clear.
  */
@@ -93,14 +116,18 @@ export function writeStoredDelegation(
   delegation: VotingDelegation | null,
 ): void {
   if (typeof window === "undefined") return;
-  if (delegation === null) {
+  const raw = delegation === null ? null : JSON.stringify(delegation);
+  if (delegationCacheReady && raw === cachedRaw) return;
+
+  if (raw === null) {
     window.localStorage.removeItem(DELEGATION_STORAGE_KEY);
+    cachedSnapshot = null;
   } else {
-    window.localStorage.setItem(
-      DELEGATION_STORAGE_KEY,
-      JSON.stringify(delegation),
-    );
+    window.localStorage.setItem(DELEGATION_STORAGE_KEY, raw);
+    cachedSnapshot = delegation;
   }
+  cachedRaw = raw;
+  delegationCacheReady = true;
   window.dispatchEvent(new Event("yieldvault-delegation-change"));
 }
 

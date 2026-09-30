@@ -17,6 +17,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { shouldShowDevUserSwitcher } from "@/components/dev/DevUserSwitcher";
 import { resetPitchDemoState } from "@/lib/demo/resetPitchDemo";
 
 interface PitchStep {
@@ -159,7 +160,11 @@ export function PitchModeWidget() {
   if (!hydrated) return null;
 
   return (
-    <div className="pointer-events-none fixed bottom-6 right-6 z-50 flex max-w-[calc(100vw-3rem)] flex-col items-end gap-3">
+    <div
+      className={`pointer-events-none fixed right-6 z-50 flex max-w-[calc(100vw-3rem)] flex-col items-end gap-3 ${
+        shouldShowDevUserSwitcher() ? "bottom-16" : "bottom-6"
+      }`}
+    >
       {expanded ? (
         <div
           className="pointer-events-auto w-[min(100vw-3rem,22rem)] rounded-2xl border border-emerald-400/40 bg-vault-bg/95 p-4 shadow-[0_0_24px_rgba(52,211,153,0.18)] backdrop-blur-xl"

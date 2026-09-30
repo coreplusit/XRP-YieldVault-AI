@@ -145,9 +145,9 @@ export function ProfileCard({
       }
 
       onToast(
-        "Testnet XRP funded",
+        "Account Activated!",
         payload.message ??
-          `Added ~${payload.amountXrp ?? 1000} Testnet XRP to your wallet.`,
+          `${payload.amountXrp ?? appConfig.vault.faucetClaimXrp} Testnet XRP added to your wallet.`,
         "success",
       );
 
@@ -305,7 +305,7 @@ export function ProfileCard({
         ) : (
           <>
             <Droplets className="h-4 w-4" aria-hidden="true" />
-            Fund Account with Testnet XRP
+            Claim {appConfig.vault.faucetClaimXrp} Free Testnet XRP & Activate
           </>
         )}
       </button>

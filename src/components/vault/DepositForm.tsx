@@ -21,6 +21,8 @@ interface DepositFormProps {
   /** Live XRPL balance in XRP; null while still loading. */
   userXrpBalance: number | null;
   onDepositSuccess: (proof: OnChainProof) => void;
+  /** Pulse and focus the amount field — it is the next onboarding step. */
+  highlightAmount?: boolean;
   onToast?: (
     title: string,
     description?: string,
@@ -37,6 +39,7 @@ export function DepositForm({
   provider,
   userXrpBalance,
   onDepositSuccess,
+  highlightAmount = false,
   onToast,
 }: DepositFormProps) {
   const suggestedXrp = useMemo(() => {
@@ -47,7 +50,7 @@ export function DepositForm({
     return Number((appConfig.vault.minDepositUsd / price).toFixed(4));
   }, []);
 
-  const [amount, setAmount] = useState<string>(String(suggestedXrp));
+  const [amount, setAmount] = useState<string>("90");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -247,8 +250,17 @@ export function DepositForm({
           <span className="text-xs font-medium text-vault-muted">
             Deposit Amount (XRP)
           </span>
+          {highlightAmount ? (
+            <span
+              id="vault-escrow-amount-hint"
+              className="mt-1 block text-xs text-vault-teal"
+            >
+              Next step: lock 100 XRP to unlock 100 Voting Power.
+            </span>
+          ) : null}
           <div className="mt-2 flex gap-2">
             <input
+              id="vault-escrow-amount"
               type="number"
               min="0"
               step="0.0001"
@@ -258,10 +270,15 @@ export function DepositForm({
                 setError(null);
               }}
               disabled={isSubmitting}
+              aria-describedby={
+                highlightAmount ? "vault-escrow-amount-hint" : undefined
+              }
               className={`h-12 w-full rounded-xl border bg-vault-bg/70 px-4 font-mono text-sm text-white outline-none transition-colors placeholder:text-vault-muted focus:border-vault-cyan/50 ${
                 isInsufficientBalance
                   ? "border-rose-500/50"
-                  : "border-slate-800/60"
+                  : highlightAmount
+                    ? "onboarding-pulse border-vault-teal/70"
+                    : "border-slate-800/60"
               }`}
               placeholder="0.0000"
             />

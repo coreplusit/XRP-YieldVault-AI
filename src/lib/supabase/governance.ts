@@ -1,5 +1,4 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import { appConfig } from "@/lib/config/env";
 import {
   COMMUNITY_DELEGATES,
   type DelegatePresetId,
@@ -88,14 +87,14 @@ export function daysUntil(endsAt: string): number {
 }
 
 /**
- * Computes Voting Power from active escrow deposit count.
- * @param activeDepositCount - Count of active vault_deposits rows.
+ * Voting Power matches escrowed XRP 1:1. Locking 200 XRP unlocks 200 VP.
+ * @param activeEscrowXrp - Sum of active vault deposit amounts in XRP.
  */
-export function computeVotingPower(activeDepositCount: number): number {
-  if (!Number.isFinite(activeDepositCount) || activeDepositCount <= 0) {
+export function computeVotingPower(activeEscrowXrp: number): number {
+  if (!Number.isFinite(activeEscrowXrp) || activeEscrowXrp <= 0) {
     return 0;
   }
-  return activeDepositCount * appConfig.vault.votingPowerPerDeposit;
+  return activeEscrowXrp;
 }
 
 /**

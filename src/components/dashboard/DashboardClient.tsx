@@ -1,13 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Loader2, Percent, RefreshCw, Timer, UserRound, Wallet } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import {
+  EscrowUnlockedBanner,
+  OnboardingProgress,
+} from "@/components/dashboard/OnboardingProgress";
 import { GovernanceNudgeCard } from "@/components/dashboard/GovernanceNudgeCard";
 import { SecurityBadgesCard } from "@/components/dashboard/SecurityBadgesCard";
 import { AccountActivationCard } from "@/components/account/AccountActivationCard";
-import { DelegateVotingPowerModal } from "@/components/governance/DelegateVotingPowerModal";
+import { DelegateModal } from "@/components/modals/DelegateModal";
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { Toast, type ToastMessage } from "@/components/ui/Toast";
 import {
@@ -32,6 +37,8 @@ import { truncateXrplAddress } from "@/lib/web3auth/xrpl";
  * Ledger data comes from VaultDataProvider cache for instant tab switches.
  */
 export function DashboardClient() {
+  const router = useRouter();
+  const governanceRedirectTimer = useRef<number | null>(null);
   const { isInitializing, isConnected, session, provider } = useWeb3Auth();
   const {
     balance,
@@ -47,6 +54,10 @@ export function DashboardClient() {
   );
 
   const [proof, setProof] = useState<OnChainProof | null>(null);
+  const [celebratedBalanceXrp, setCelebratedBalanceXrp] = useState<
+    number | null
+  >(null);
+  const [highlightEscrow, setHighlightEscrow] = useState<boolean>(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [delegateModalOpen, setDelegateModalOpen] = useState<boolean>(false);
@@ -54,8 +65,8 @@ export function DashboardClient() {
 
   const activeDepositCount = stats?.activeDepositCount ?? 0;
   const userVotingPower = useMemo(
-    () => computeVotingPower(activeDepositCount),
-    [activeDepositCount],
+    () => computeVotingPower(stats?.totalDepositedXrp ?? 0),
+    [stats?.totalDepositedXrp],
   );
 
   useEffect(() => {
@@ -105,17 +116,40 @@ export function DashboardClient() {
     }
   }, [refreshAll, showToast]);
 
+  useEffect(() => {
+    return () => {
+      if (governanceRedirectTimer.current !== null) {
+        window.clearTimeout(governanceRedirectTimer.current);
+      }
+    };
+  }, []);
+
+  const scrollToEscrowDeposit = useCallback((): void => {
+    setHighlightEscrow(true);
+    const section = document.getElementById("vault-escrow-deposit");
+    section?.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => {
+      document.getElementById("vault-escrow-amount")?.focus();
+    }, 450);
+  }, []);
+
   const handleDepositSuccess = useCallback(
     (nextProof: OnChainProof): void => {
       setProof(nextProof);
       void refreshAll(true);
       showToast(
-        "Escrow validated",
-        `Locked ${nextProof.amountXrp} XRP on XRPL.`,
+        "🎉 100 XRP Locked in Escrow! Redirecting to DAO Governance...",
+        undefined,
         "success",
       );
+      if (governanceRedirectTimer.current !== null) {
+        window.clearTimeout(governanceRedirectTimer.current);
+      }
+      governanceRedirectTimer.current = window.setTimeout(() => {
+        router.push("/dao-governance?onboarding=vote");
+      }, 2000);
     },
-    [refreshAll, showToast],
+    [refreshAll, router, showToast],
   );
 
   const handleDelegateConfirm = useCallback(
@@ -148,7 +182,15 @@ export function DashboardClient() {
   const userId = session.dbUser?.id;
   const userXrpBalance = balance?.balanceXrp ?? null;
   const balancePending = isBalanceLoading && userXrpBalance === null;
-  const showGovernanceNudge = activeDepositCount > 0 && userVotingPower > 0;
+  const walletReady =
+    (userXrpBalance ?? 0) > 0 || (celebratedBalanceXrp ?? 0) > 0;
+  const escrowComplete = activeDepositCount > 0 || proof !== null;
+  const latestEscrowAmount =
+    proof?.amountXrp ??
+    stats?.deposits.find((deposit) => deposit.status === "active")
+      ?.amount_xrp ??
+    0;
+  const showGovernanceNudge = escrowComplete && userVotingPower > 0;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -188,6 +230,18 @@ export function DashboardClient() {
         </div>
       </div>
 
+      <OnboardingProgress
+        walletReady={walletReady}
+        escrowComplete={escrowComplete}
+      />
+
+      {escrowComplete ? (
+        <EscrowUnlockedBanner
+          amountXrp={latestEscrowAmount}
+          votingPower={userVotingPower}
+        />
+      ) : null}
+
       {showGovernanceNudge ? (
         <GovernanceNudgeCard
           votingPower={userVotingPower}
@@ -198,30 +252,36 @@ export function DashboardClient() {
         />
       ) : null}
 
-      <AccountActivationCard
-        xrplAddress={session.xrplAddress}
-        balanceXrp={userXrpBalance}
-        isBalanceLoading={isBalanceLoading}
-        onCopied={() =>
-          showToast(
-            "Address copied",
-            "Paste it in Binance / WazirX to deposit activation XRP.",
-            "info",
-          )
-        }
-        onFaucetSuccess={(amountXrp) => {
-          showToast(
-            "Account Activated!",
-            `${amountXrp} Testnet XRP added.`,
-          );
-          void refreshBalance(true);
-          window.setTimeout(() => void refreshBalance(true), 2500);
-          window.setTimeout(() => void refreshBalance(true), 6000);
-        }}
-        onFaucetError={(message) => {
-          showToast("Faucet funding failed", message, "error");
-        }}
-      />
+      {escrowComplete ? null : (
+        <AccountActivationCard
+          xrplAddress={session.xrplAddress}
+          balanceXrp={userXrpBalance}
+          isBalanceLoading={isBalanceLoading}
+          celebratedBalanceXrp={celebratedBalanceXrp}
+          emphasizeClaim={!walletReady}
+          onLockEscrow={walletReady ? scrollToEscrowDeposit : undefined}
+          onCopied={() =>
+            showToast(
+              "Address copied",
+              "Paste it in Binance / WazirX to deposit activation XRP.",
+              "info",
+            )
+          }
+          onFaucetSuccess={(amountXrp) => {
+            setCelebratedBalanceXrp(amountXrp);
+            showToast(
+              "Account Activated!",
+              `${amountXrp} Testnet XRP added to your wallet.`,
+            );
+            void refreshBalance(true);
+            window.setTimeout(() => void refreshBalance(true), 2500);
+            window.setTimeout(() => void refreshBalance(true), 6000);
+          }}
+          onFaucetError={(message) => {
+            showToast("Faucet funding failed", message, "error");
+          }}
+        />
+      )}
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <article className="glass-panel rounded-2xl p-5">
@@ -265,15 +325,19 @@ export function DashboardClient() {
           <p className="text-[10px] uppercase tracking-wider text-vault-muted">
             Total Deposited
           </p>
-          <p className="mt-1 font-mono text-2xl font-semibold text-white">
-            {(stats?.totalDepositedXrp ?? 0).toLocaleString(undefined, {
-              maximumFractionDigits: 4,
-            })}{" "}
-            <span className="text-sm text-vault-muted">XRP</span>
-          </p>
+          {isStatsLoading && !stats ? (
+            <div className="mt-3 h-8 w-28 animate-pulse rounded-lg bg-slate-800/80" />
+          ) : (
+            <p className="mt-1 font-mono text-2xl font-semibold text-white">
+              {(stats?.totalDepositedXrp ?? 0).toLocaleString(undefined, {
+                maximumFractionDigits: 4,
+              })}{" "}
+              <span className="text-sm text-vault-muted">XRP</span>
+            </p>
+          )}
           <p className="mt-1 text-xs text-vault-muted">
             {isStatsLoading && !stats
-              ? "Loading…"
+              ? "Loading deposits…"
               : `${stats?.activeDepositCount ?? 0} active escrows`}
           </p>
         </article>
@@ -289,13 +353,23 @@ export function DashboardClient() {
 
       <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         {userId && provider ? (
-          <DepositForm
-            userId={userId}
-            provider={provider}
-            userXrpBalance={userXrpBalance}
-            onDepositSuccess={handleDepositSuccess}
-            onToast={showToast}
-          />
+          <div
+            id="vault-escrow-deposit"
+            className={
+              walletReady && !escrowComplete
+                ? "rounded-2xl onboarding-pulse"
+                : undefined
+            }
+          >
+            <DepositForm
+              userId={userId}
+              provider={provider}
+              userXrpBalance={userXrpBalance}
+              highlightAmount={highlightEscrow || (walletReady && !escrowComplete)}
+              onDepositSuccess={handleDepositSuccess}
+              onToast={showToast}
+            />
+          </div>
         ) : (
           <div className="glass-panel rounded-2xl p-6 text-sm text-vault-muted">
             Complete Supabase user sync before depositing. Visit{" "}
@@ -372,9 +446,9 @@ export function DashboardClient() {
         </section>
       ) : null}
 
-      <DelegateVotingPowerModal
+      <DelegateModal
         open={delegateModalOpen}
-        votingPower={userVotingPower || appConfig.vault.votingPowerPerDeposit}
+        votingPower={userVotingPower || appConfig.vault.faucetClaimXrp}
         currentDelegation={delegation}
         onClose={() => setDelegateModalOpen(false)}
         onConfirm={handleDelegateConfirm}

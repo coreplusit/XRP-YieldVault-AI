@@ -25,8 +25,8 @@ export const INVESTOR_TOOLTIPS = {
   staking:
     "Staked $VAULT aligns long-term governance. Voting rights stay separate from Non-Custodial XRPL Native Escrow — staking never moves your escrowed XRP.",
 
-  votingPower: (vpPerDeposit: number): string =>
-    `Voting Power = active XRPL Native Escrow deposits × ${vpPerDeposit} VP. Your principal stays Non-Custodial; VP only weights DAO votes.`,
+  votingPower: (claimXrp: number): string =>
+    `Voting Power matches escrowed XRP 1:1. Locking ${claimXrp} XRP in XRPL Native Escrow unlocks ${claimXrp} VP. Principal stays Non-Custodial; VP only weights DAO votes.`,
 
   delegation:
     "Delegation passes Voting Power to a trusted community or AI delegate without risking or moving escrowed funds — Non-Custodial XRPL Native Escrow remains untouched.",

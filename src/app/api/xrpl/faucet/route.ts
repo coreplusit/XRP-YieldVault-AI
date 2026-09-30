@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { appConfig } from "@/lib/config/env";
 import { getXrplFaucetUrl } from "@/lib/xrpl/escrow";
 
 interface FaucetRequestBody {
@@ -79,18 +80,19 @@ export async function POST(request: Request): Promise<NextResponse> {
     const data = (payload ?? {}) as FaucetSuccessBody;
     const fundedAddress =
       data.account?.classicAddress ?? data.account?.address ?? address;
-    const amountXrp =
-      typeof data.amount === "number"
-        ? data.amount
-        : typeof data.balance === "number"
-          ? data.balance
-          : 1000;
+    const amountXrp = appConfig.vault.faucetClaimXrp;
 
     return NextResponse.json({
       ok: true,
       address: fundedAddress,
       amountXrp,
-      message: `Funded ${fundedAddress} with ~${amountXrp} Testnet XRP.`,
+      ledgerAmount:
+        typeof data.amount === "number"
+          ? data.amount
+          : typeof data.balance === "number"
+            ? data.balance
+            : null,
+      message: `Account Activated! ${amountXrp} Testnet XRP added to your wallet.`,
     });
   } catch (error: unknown) {
     const message =

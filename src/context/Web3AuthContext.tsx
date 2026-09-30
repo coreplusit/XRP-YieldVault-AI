@@ -131,6 +131,36 @@ function logAuthIssue(scope: string, message: string): void {
   console.warn(`[Web3Auth] ${scope}:`, message);
 }
 
+const AUTH_CONSOLE_FILTER = "__yieldvaultAuthConsoleFilter";
+
+/**
+ * Keeps Next.js from turning Web3Auth's expired-session console.error
+ * into a red dev overlay. Must stay installed — restoring console.error
+ * during Strict Mode cleanup lets the overlay through mid-init.
+ */
+function installAuthConsoleFilter(): void {
+  if (typeof window === "undefined") return;
+
+  const current = window.console.error as typeof console.error & {
+    [AUTH_CONSOLE_FILTER]?: boolean;
+  };
+  if (current[AUTH_CONSOLE_FILTER]) return;
+
+  const wrapped = ((...args: unknown[]): void => {
+    if (args.some((arg) => isStaleWeb3AuthSessionError(arg))) {
+      return;
+    }
+    current.apply(window.console, args);
+  }) as typeof console.error & { [AUTH_CONSOLE_FILTER]?: boolean };
+
+  wrapped[AUTH_CONSOLE_FILTER] = true;
+  window.console.error = wrapped;
+}
+
+if (typeof window !== "undefined") {
+  installAuthConsoleFilter();
+}
+
 /**
  * Web3Auth no-modal provider for Sapphire Devnet + Google OpenLogin.
  * Uses CommonPrivateKeyProvider so login never hits Ethereum EIP-1559 RPC.
@@ -213,23 +243,7 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
 
     window.addEventListener("unhandledrejection", handleUnhandledRejection, true);
     window.addEventListener("error", handleWindowError, true);
-
-    /**
-     * Next.js maps console.error to a red overlay. Web3Auth logs
-     * "Session Expired or Invalid public key" that way during init
-     * even when nobody is logged in.
-     */
-    const originalConsoleError = console.error;
-    console.error = (...args: unknown[]): void => {
-      if (args.some((arg) => isStaleWeb3AuthSessionError(arg))) {
-        logAuthIssue(
-          "stale session",
-          "Ignored expired Web3Auth session while logged out.",
-        );
-        return;
-      }
-      originalConsoleError.apply(console, args);
-    };
+    installAuthConsoleFilter();
 
     /**
      * Initializes Web3Auth no-modal + Auth (OpenLogin) with key-only provider.
@@ -277,6 +291,7 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
         instance: Web3AuthNoModal,
         authAdapter: AuthAdapter,
       ): Promise<void> => {
+        installAuthConsoleFilter();
         await withoutInjectedEthereum(async () => {
           instance.configureAdapter(authAdapter);
           await instance.init();
@@ -326,7 +341,6 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
           }
         }
       } finally {
-        console.error = originalConsoleError;
         if (!cancelled) {
           setIsInitializing(false);
         }
@@ -337,7 +351,6 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
 
     return () => {
       cancelled = true;
-      console.error = originalConsoleError;
       window.removeEventListener(
         "unhandledrejection",
         handleUnhandledRejection,

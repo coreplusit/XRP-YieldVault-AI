@@ -40,3 +40,19 @@ export function PageSkeleton({
     </div>
   );
 }
+
+/**
+ * Placeholder rows for tables that load XRPL or Supabase data after navigation.
+ */
+export function TableSkeleton({ rows = 5 }: { rows?: number }) {
+  return (
+    <div className="animate-pulse space-y-3 p-4" aria-hidden="true">
+      {Array.from({ length: rows }).map((_, index) => (
+        <div
+          key={`table-skel-${index}`}
+          className="h-12 w-full rounded-xl bg-slate-800/70"
+        />
+      ))}
+    </div>
+  );
+}

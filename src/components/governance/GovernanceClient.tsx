@@ -2,16 +2,18 @@
 
 import {
   FilePlus2,
+  Handshake,
   Landmark,
   Loader2,
   RefreshCw,
   Scale,
-  Share2,
   Vote,
 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { DelegateVotingPowerModal } from "@/components/governance/DelegateVotingPowerModal";
+import { TableSkeleton } from "@/components/ui/PageSkeleton";
+import { DelegateModal } from "@/components/modals/DelegateModal";
 import {
   SubmitProposalModal,
   type SubmitProposalFormValues,
@@ -34,7 +36,6 @@ import {
   type UiProposalStatus,
   type VoteOption,
 } from "@/lib/supabase/governance";
-import { truncateXrplAddress } from "@/lib/web3auth/xrpl";
 
 /**
  * Maps proposal status to badge label + styles.
@@ -70,8 +71,11 @@ function statusBadge(status: UiProposalStatus): {
 
 /**
  * DAO Governance dashboard — Supabase-backed proposals, votes, and delegation.
+ * `onboarding=vote` is read on the client so this route stays static and navigation is not blocked.
  */
 export function GovernanceClient() {
+  const searchParams = useSearchParams();
+  const onboardingVote = searchParams.get("onboarding") === "vote";
   const { isInitializing, isConnected, session } = useWeb3Auth();
   const { stats } = useVaultData();
   const userId = session?.dbUser?.id ?? null;
@@ -82,15 +86,28 @@ export function GovernanceClient() {
   const [votingProposalId, setVotingProposalId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [delegateModalOpen, setDelegateModalOpen] = useState<boolean>(false);
+  const [delegateProposalTitle, setDelegateProposalTitle] = useState<
+    string | null
+  >(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
   const { delegation, delegate, clearDelegation, syncError } =
     useVotingDelegation(userId);
 
   const userVotingPower = useMemo(
-    () => computeVotingPower(stats?.activeDepositCount ?? 0),
-    [stats?.activeDepositCount],
+    () => computeVotingPower(stats?.totalDepositedXrp ?? 0),
+    [stats?.totalDepositedXrp],
   );
+
+  const guidedProposalId = useMemo(() => {
+    if (!onboardingVote) return null;
+    const active = proposals.find((proposal) => proposal.status === "active");
+    if (active) return active.id;
+    const votable = proposals.find(
+      (proposal) => proposal.status === "quorum",
+    );
+    return votable?.id ?? null;
+  }, [onboardingVote, proposals]);
 
   const activeCount = useMemo(
     () =>
@@ -199,6 +216,11 @@ export function GovernanceClient() {
     [showToast],
   );
 
+  const openDelegateModal = useCallback((proposalTitle?: string): void => {
+    setDelegateProposalTitle(proposalTitle ?? null);
+    setDelegateModalOpen(true);
+  }, []);
+
   const handleDelegateConfirm = useCallback(
     async (
       presetId: DelegatePresetId,
@@ -291,7 +313,7 @@ export function GovernanceClient() {
             <InfoTooltip
               label="How is voting power calculated?"
               content={INVESTOR_TOOLTIPS.votingPower(
-                appConfig.vault.votingPowerPerDeposit,
+                appConfig.vault.faucetClaimXrp,
               )}
             />
           </div>
@@ -306,23 +328,34 @@ export function GovernanceClient() {
             {userVotingPower.toLocaleString()}{" "}
             <span className="text-sm text-vault-muted">VP</span>
           </p>
-          <button
-            type="button"
-            onClick={() => setDelegateModalOpen(true)}
-            className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-800/60 px-3 py-2 text-xs text-vault-muted transition-colors hover:border-vault-cyan/30 hover:text-white sm:w-auto sm:justify-start sm:py-1.5"
-          >
-            <Share2 className="h-3.5 w-3.5" aria-hidden="true" />
-            Delegate Voting Power
-          </button>
           {delegation ? (
-            <p className="mt-2 break-words text-xs text-vault-teal">
-              Delegated to: {delegation.displayName}
-              <span className="mt-0.5 block font-mono text-[10px] text-vault-muted">
-                {truncateXrplAddress(delegation.address, 8, 6)}
-              </span>
-            </p>
+            <div className="mt-3 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-vault-teal/40 bg-vault-teal/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-vault-teal">
+                  Active
+                </span>
+                <span className="text-xs text-white">{delegation.displayName}</span>
+              </div>
+              <p className="break-all font-mono text-[11px] text-vault-muted">
+                {delegation.address}
+              </p>
+              <button
+                type="button"
+                onClick={() => void handleRevokeDelegation()}
+                className="inline-flex h-10 w-full items-center justify-center rounded-xl border border-rose-400/40 px-3 text-sm font-semibold text-rose-200 transition-colors hover:bg-rose-400/10"
+              >
+                Revoke Delegation
+              </button>
+            </div>
           ) : (
-            <p className="mt-2 text-xs text-vault-muted">Self-voting (no delegate)</p>
+            <button
+              type="button"
+              onClick={() => openDelegateModal()}
+              className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-neon text-sm font-semibold text-vault-bg shadow-neon-sm transition-all hover:brightness-110"
+            >
+              <Handshake className="h-4 w-4" aria-hidden="true" />
+              Delegate Voting Power
+            </button>
           )}
           {syncError ? (
             <p className="mt-1 text-[11px] text-amber-200">{syncError}</p>
@@ -343,6 +376,18 @@ export function GovernanceClient() {
       </div>
 
       <section>
+        {onboardingVote ? (
+          <div
+            className="mb-4 rounded-2xl border border-vault-teal/40 bg-vault-teal/10 px-4 py-4 sm:px-5"
+            role="status"
+            aria-label="Voting power unlocked"
+          >
+            <p className="text-sm font-semibold text-white sm:text-base">
+              🗳️ Voting Power Unlocked! You have 100 VP available. Cast your
+              vote on active proposals below to participate in governance.
+            </p>
+          </div>
+        ) : null}
         <div className="mb-4 flex items-center gap-2">
           <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-vault-cyan">
             Active Proposals
@@ -354,9 +399,8 @@ export function GovernanceClient() {
         </div>
 
         {isLoading && proposals.length === 0 ? (
-          <div className="glass-panel flex items-center justify-center gap-2 rounded-2xl px-4 py-16 text-sm text-vault-muted">
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-            Loading proposals from Supabase…
+          <div className="glass-panel overflow-hidden rounded-2xl">
+            <TableSkeleton rows={4} />
           </div>
         ) : loadError && proposals.length === 0 ? (
           <div className="glass-panel rounded-2xl px-4 py-10 text-center">
@@ -387,6 +431,7 @@ export function GovernanceClient() {
               const noPct = (proposal.noVotes / total) * 100;
               const abstainPct = (proposal.abstainVotes / total) * 100;
               const isVoting = votingProposalId === proposal.id;
+              const guideVote = guidedProposalId === proposal.id;
 
               return (
                 <li
@@ -459,9 +504,13 @@ export function GovernanceClient() {
                       disabled={!canVote || isVoting}
                       onClick={() => void handleVote(proposal.id, "yes")}
                       className={`rounded-xl border px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                        guideVote ? "onboarding-pulse " : ""
+                      }${
                         proposal.userVote === "yes"
                           ? "border-vault-teal/40 bg-vault-teal/15 text-vault-teal"
-                          : "border-slate-800/60 text-vault-muted hover:border-vault-teal/30 hover:text-vault-teal"
+                          : guideVote
+                            ? "border-vault-teal/70 text-vault-teal"
+                            : "border-slate-800/60 text-vault-muted hover:border-vault-teal/30 hover:text-vault-teal"
                       }`}
                     >
                       Vote Yes
@@ -471,9 +520,13 @@ export function GovernanceClient() {
                       disabled={!canVote || isVoting}
                       onClick={() => void handleVote(proposal.id, "no")}
                       className={`rounded-xl border px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                        guideVote ? "onboarding-pulse " : ""
+                      }${
                         proposal.userVote === "no"
                           ? "border-rose-400/40 bg-rose-400/10 text-rose-300"
-                          : "border-slate-800/60 text-vault-muted hover:border-rose-400/30 hover:text-rose-300"
+                          : guideVote
+                            ? "border-rose-300/70 text-rose-200"
+                            : "border-slate-800/60 text-vault-muted hover:border-rose-400/30 hover:text-rose-300"
                       }`}
                     >
                       Vote No
@@ -490,6 +543,16 @@ export function GovernanceClient() {
                     >
                       Abstain
                     </button>
+                    {canVote ? (
+                      <button
+                        type="button"
+                        onClick={() => openDelegateModal(proposal.title)}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-vault-cyan/30 px-4 py-2 text-sm font-medium text-vault-cyan transition-colors hover:bg-vault-cyan/10"
+                      >
+                        <Handshake className="h-3.5 w-3.5" aria-hidden="true" />
+                        Delegate this Vote
+                      </button>
+                    ) : null}
                     {isVoting ? (
                       <Loader2
                         className="h-4 w-4 animate-spin text-vault-cyan"
@@ -517,12 +580,11 @@ export function GovernanceClient() {
         onClose={() => setModalOpen(false)}
         onSubmit={handleSubmitProposal}
       />
-      <DelegateVotingPowerModal
+      <DelegateModal
         open={delegateModalOpen}
-        votingPower={
-          userVotingPower || appConfig.vault.votingPowerPerDeposit
-        }
+        votingPower={userVotingPower || appConfig.vault.faucetClaimXrp}
         currentDelegation={delegation}
+        proposalTitle={delegateProposalTitle}
         onClose={() => setDelegateModalOpen(false)}
         onConfirm={handleDelegateConfirm}
         onRevoke={handleRevokeDelegation}

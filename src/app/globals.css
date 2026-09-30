@@ -24,4 +24,18 @@
   .text-gradient-neon {
     @apply bg-gradient-neon bg-clip-text text-transparent;
   }
+
+  .onboarding-pulse {
+    animation: onboarding-pulse 1.8s ease-in-out infinite;
+  }
+}
+
+@keyframes onboarding-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(45, 212, 191, 0);
+  }
 }
