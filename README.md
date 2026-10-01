@@ -12,6 +12,8 @@ A decentralized yield optimization platform built on the XRP Ledger (XRPL) ecosy
 - **Reverse Proxy**: Nginx
 
 ## Repository Structure
+
+.
 ├── docs/                 # System architecture and workflow diagrams
 ├── scripts/              # Utility and deployment scripts
 ├── src/
