@@ -20,7 +20,7 @@ import { CopyButton } from "@/components/ui/CopyButton";
 import { Toast, type ToastMessage } from "@/components/ui/Toast";
 import { useVaultData } from "@/context/VaultDataContext";
 import { useWeb3Auth } from "@/context/Web3AuthContext";
-import { yieldVaultSessionHeaders } from "@/lib/auth/sessionClient";
+import { claimTestnetFaucet } from "@/lib/auth/sessionClient";
 import { appConfig } from "@/lib/config/env";
 import type { YieldVaultUser } from "@/lib/supabase/users";
 import { truncateTxHash, truncateXrplAddress } from "@/lib/web3auth/xrpl";
@@ -90,16 +90,18 @@ export function ProfileClient() {
       return;
     }
 
+    if (!provider) {
+      showToast(
+        "Funding failed",
+        "Sign in is required before claiming Testnet XRP.",
+        "error",
+      );
+      return;
+    }
+
     setIsFunding(true);
     try {
-      const response = await fetch("/api/xrpl/faucet", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...yieldVaultSessionHeaders(),
-        },
-        body: JSON.stringify({ address: session.xrplAddress }),
-      });
+      const response = await claimTestnetFaucet(provider, session.xrplAddress);
       const payload = (await response.json()) as FaucetApiResponse;
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error ?? "Faucet funding failed.");
@@ -118,7 +120,7 @@ export function ProfileClient() {
     } finally {
       setIsFunding(false);
     }
-  }, [refreshBalance, session, showToast]);
+  }, [provider, refreshBalance, session, showToast]);
 
   const handleWithdrawSuccess = useCallback(
     (payload: {

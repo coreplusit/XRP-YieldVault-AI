@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { verifySessionToken } from "@/lib/auth/sessionToken";
+import { verifyFaucetProof } from "@/lib/auth/walletProof";
 import { appConfig } from "@/lib/config/env";
 import { getXrplFaucetUrl } from "@/lib/xrpl/escrow";
 
@@ -9,6 +10,9 @@ const CLAIM_COOLDOWN_MS = 45_000;
 
 interface FaucetRequestBody {
   address?: unknown;
+  publicKey?: unknown;
+  signature?: unknown;
+  issuedAt?: unknown;
 }
 
 interface FaucetSuccessBody {
@@ -47,16 +51,32 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
 
-  let session;
-  try {
-    session = verifySessionToken(request.headers.get("x-yieldvault-session"));
-  } catch (error: unknown) {
-    const message =
-      error instanceof Error ? error.message : "Session secret is not configured.";
-    return NextResponse.json({ ok: false, error: message }, { status: 503 });
+  const issuedAt =
+    typeof body.issuedAt === "number" ? body.issuedAt : Number.NaN;
+  const walletProofOk = verifyFaucetProof({
+    address,
+    publicKey: typeof body.publicKey === "string" ? body.publicKey.trim() : "",
+    signature: typeof body.signature === "string" ? body.signature.trim() : "",
+    issuedAt,
+  });
+
+  let sessionMatches = false;
+  if (!walletProofOk) {
+    try {
+      const session = verifySessionToken(
+        request.headers.get("x-yieldvault-session"),
+      );
+      sessionMatches = Boolean(session && session.xrplAddress === address);
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Session secret is not configured.";
+      return NextResponse.json({ ok: false, error: message }, { status: 503 });
+    }
   }
 
-  if (!session || session.xrplAddress !== address) {
+  if (!walletProofOk && !sessionMatches) {
     return NextResponse.json(
       {
         ok: false,

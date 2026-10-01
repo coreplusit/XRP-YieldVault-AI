@@ -3,7 +3,11 @@
 import { sign } from "ripple-keypairs";
 import type { IProvider } from "@web3auth/base";
 
-import { buildSessionMessage, utf8ToHex } from "@/lib/auth/sessionMessage";
+import {
+  buildFaucetMessage,
+  buildSessionMessage,
+  utf8ToHex,
+} from "@/lib/auth/sessionMessage";
 import {
   applyYieldVaultSession,
   getYieldVaultSessionToken,
@@ -16,6 +20,42 @@ interface SessionApiResponse {
   error?: string;
   token?: string;
   user?: YieldVaultUser;
+}
+
+/**
+ * Claims Testnet XRP for the connected wallet.
+ * Sends a fresh XRPL signature so the faucet does not depend on the Supabase session token.
+ * @param provider - Connected Web3Auth provider.
+ * @param address - Classic address shown in the UI.
+ */
+export async function claimTestnetFaucet(
+  provider: IProvider,
+  address: string,
+): Promise<Response> {
+  const wallet = await getXrplWalletFromProvider(provider);
+  if (wallet.classicAddress !== address) {
+    throw new Error("Connected wallet does not match this account.");
+  }
+
+  const issuedAt = Date.now();
+  const signature = sign(
+    utf8ToHex(buildFaucetMessage(address, issuedAt)),
+    wallet.privateKey,
+  );
+
+  return fetch("/api/xrpl/faucet", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...yieldVaultSessionHeaders(),
+    },
+    body: JSON.stringify({
+      address,
+      issuedAt,
+      publicKey: wallet.publicKey,
+      signature,
+    }),
+  });
 }
 
 /**

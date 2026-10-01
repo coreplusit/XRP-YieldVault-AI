@@ -11,6 +11,18 @@ export function buildSessionMessage(
 }
 
 /**
+ * Message the wallet signs to authorize one Testnet faucet claim.
+ * @param xrplAddress - Account that will receive the funds.
+ * @param issuedAt - Unix milliseconds chosen by the client.
+ */
+export function buildFaucetMessage(
+  xrplAddress: string,
+  issuedAt: number,
+): string {
+  return `yieldvault-faucet:${issuedAt}:${xrplAddress}`;
+}
+
+/**
  * UTF-8 to hex without Node Buffer so the browser and server match.
  * @param value - Plain message string.
  */

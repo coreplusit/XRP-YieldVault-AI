@@ -11,8 +11,9 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { CopyButton } from "@/components/ui/CopyButton";
-import { yieldVaultSessionHeaders } from "@/lib/auth/sessionClient";
+import { claimTestnetFaucet } from "@/lib/auth/sessionClient";
 import { appConfig } from "@/lib/config/env";
+import { useWeb3Auth } from "@/context/Web3AuthContext";
 import type { VaultDepositStats } from "@/lib/supabase/deposits";
 import type { YieldVaultUser } from "@/lib/supabase/users";
 import { truncateXrplAddress } from "@/lib/web3auth/xrpl";
@@ -80,6 +81,7 @@ export function ProfileCard({
   onToast,
   onBalanceRefreshed,
 }: ProfileCardProps) {
+  const { provider } = useWeb3Auth();
   const [balance, setBalance] = useState<XrplAccountBalance | null>(null);
   const [isLoadingBalance, setIsLoadingBalance] = useState<boolean>(true);
   const [isFunding, setIsFunding] = useState<boolean>(false);
@@ -131,16 +133,18 @@ export function ProfileCard({
       return;
     }
 
+    if (!provider) {
+      onToast(
+        "Funding failed",
+        "Sign in is required before claiming Testnet XRP.",
+        "error",
+      );
+      return;
+    }
+
     setIsFunding(true);
     try {
-      const response = await fetch("/api/xrpl/faucet", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...yieldVaultSessionHeaders(),
-        },
-        body: JSON.stringify({ address: xrplAddress }),
-      });
+      const response = await claimTestnetFaucet(provider, xrplAddress);
 
       const payload = (await response.json()) as FaucetApiResponse;
 
@@ -169,7 +173,7 @@ export function ProfileCard({
     } finally {
       setIsFunding(false);
     }
-  }, [onToast, refreshBalance, xrplAddress]);
+  }, [onToast, provider, refreshBalance, xrplAddress]);
 
   return (
     <section className="glass-panel rounded-2xl p-6">

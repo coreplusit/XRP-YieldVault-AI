@@ -11,8 +11,9 @@ import {
 } from "lucide-react";
 import { useCallback, useState } from "react";
 
-import { yieldVaultSessionHeaders } from "@/lib/auth/sessionClient";
+import { claimTestnetFaucet } from "@/lib/auth/sessionClient";
 import { appConfig } from "@/lib/config/env";
+import { useWeb3Auth } from "@/context/Web3AuthContext";
 
 const FAUCET_CLAIM_XRP = appConfig.vault.faucetClaimXrp;
 
@@ -68,6 +69,7 @@ export function AccountActivationCard({
   emphasizeClaim = false,
   className = "",
 }: AccountActivationCardProps) {
+  const { provider } = useWeb3Auth();
   const [isCopying, setIsCopying] = useState<boolean>(false);
   const [copyDone, setCopyDone] = useState<boolean>(false);
   const [isFunding, setIsFunding] = useState<boolean>(false);
@@ -116,18 +118,18 @@ export function AccountActivationCard({
       return;
     }
 
+    if (!provider) {
+      const message = "Sign in is required before claiming Testnet XRP.";
+      setFundError(message);
+      onFaucetError?.(message);
+      return;
+    }
+
     setIsFunding(true);
     setFundError(null);
 
     try {
-      const response = await fetch("/api/xrpl/faucet", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...yieldVaultSessionHeaders(),
-        },
-        body: JSON.stringify({ address: xrplAddress }),
-      });
+      const response = await claimTestnetFaucet(provider, xrplAddress);
       const payload = (await response.json()) as FaucetApiResponse;
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error ?? "Faucet funding failed.");
@@ -143,7 +145,7 @@ export function AccountActivationCard({
     } finally {
       setIsFunding(false);
     }
-  }, [isTestnet, onFaucetError, onFaucetSuccess, xrplAddress]);
+  }, [isTestnet, onFaucetError, onFaucetSuccess, provider, xrplAddress]);
 
   if (
     !balanceKnown &&
