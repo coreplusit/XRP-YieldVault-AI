@@ -2,6 +2,9 @@
 
 A decentralized, AI-driven yield optimization and vault management platform built natively for the XRP Ledger (XRPL) ecosystem. It combines automated on-chain risk scoring, real-time APY analytics, and non-custodial Web3 wallet integration to optimize liquidity deployment across XRPL protocols.
 
+👉 **Live Application**: [https://139.59.94.12.nip.io](https://139.59.94.12.nip.io)  
+👉 **Interactive Platform Guide**: [https://139.59.94.12.nip.io/guide](https://139.59.94.12.nip.io/guide)
+
 ---
 
 ## Key Features & Functionality
@@ -11,7 +14,7 @@ A decentralized, AI-driven yield optimization and vault management platform buil
 - **Non-Custodial Web3 Auth**: Supports seamless social logins and non-custodial wallet connections powered by Web3Auth and XRPL providers.
 - **Real-Time On-Chain Analytics**: Direct interaction with XRPL via official SDKs (`xrpl`) to fetch account balances, trustlines, and transaction history.
 - **Automated Rebalancing Alerts**: Signals optimal liquidity repositioning to maximize APY while hedging against downside market risks.
-- **Developer-Friendly REST & API Services**: Modular backend architecture designed for low-latency data fetching and strategy execution.
+- **Interactive Platform Walkthrough**: Built-in visual protocol guide at `/guide` walking through onboarding, escrow locks, governance, and withdrawals.
 
 ---
 
@@ -29,10 +32,9 @@ A decentralized, AI-driven yield optimization and vault management platform buil
 ## Repository Structure
 
 - `src/`
-  - `app/`: Next.js App Router pages, layout configurations, and API endpoints.
+  - `app/`: Next.js App Router pages, layout configurations, API endpoints, and the interactive `/guide` route.
   - `components/`: UI components, dashboard widgets, and wallet modal flows.
   - `lib/`: XRPL client connection utilities, AI yield algorithms, and provider configs.
-- `docs/`: Architecture workflow diagrams and hackathon documentation.
 - `scripts/`: Deployment scripts and automation tasks.
 - `.env.example`: Environment variable template for credentials and RPC nodes.
 - `next.config.ts`: Next.js build and image domain rules.
