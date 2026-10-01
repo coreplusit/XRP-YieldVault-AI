@@ -11,7 +11,7 @@ import { useWeb3Auth } from "@/context/Web3AuthContext";
 import { truncateXrplAddress } from "@/lib/web3auth/xrpl";
 
 interface NavLink {
-  href: "/dashboard" | "/governance" | "/analytics" | "/docs";
+  href: "/dashboard" | "/governance" | "/analytics" | "/guide";
   label: string;
   /** When true, unauthenticated clicks trigger Google login then navigate. */
   requiresAuth: boolean;
@@ -21,7 +21,7 @@ const NAV_LINKS: readonly NavLink[] = [
   { href: "/dashboard", label: "Vaults", requiresAuth: true },
   { href: "/governance", label: "Governance", requiresAuth: true },
   { href: "/analytics", label: "Analytics", requiresAuth: true },
-  { href: "/docs", label: "Documentation", requiresAuth: false },
+  { href: "/guide", label: "Platform Guide", requiresAuth: false },
 ] as const;
 
 /**

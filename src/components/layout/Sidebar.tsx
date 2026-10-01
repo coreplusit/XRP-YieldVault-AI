@@ -2,6 +2,7 @@
 
 import {
   BarChart3,
+  BookOpen,
   History,
   Landmark,
   LayoutDashboard,
@@ -48,6 +49,12 @@ export const APP_NAV: readonly AppNavItem[] = [
     label: "Yield Calculator",
     description: "APY estimates",
     icon: <BarChart3 className="h-4 w-4" aria-hidden="true" />,
+  },
+  {
+    href: "/guide",
+    label: "Platform Guide",
+    description: "Interactive walkthrough",
+    icon: <BookOpen className="h-4 w-4" aria-hidden="true" />,
   },
 ] as const;
 
