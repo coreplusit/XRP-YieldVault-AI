@@ -278,8 +278,38 @@ const SECTIONS: readonly GuideSection[] = [
     ],
   },
   {
-    id: "delegate",
+    id: "submit-proposal",
     step: "09",
+    title: "Submit a DAO proposal",
+    href: "/governance",
+    hrefLabel: "Open DAO Governance",
+    lead: "Submit Proposal opens from DAO Governance. You set a title, a category, a description, and how many days the vote stays open. On submit, the proposal is stored in Supabase as active, with zero tallies, and it appears at the top of the list.",
+    figures: [
+      {
+        file: "submit-proposal.png",
+        alt: "Submit Proposal modal with title, category, description, and a 7-day duration",
+        width: 805,
+        height: 591,
+      },
+    ],
+    notes: [
+      {
+        label: "Form",
+        body: "Categories are Yield Strategy, Fees, Treasury, Parameter, and Other. The title needs at least 8 characters and the description at least 20. Target duration defaults to 7 days and must be between 1 and 30.",
+      },
+      {
+        label: "Supabase",
+        body: "The insert writes public.proposals with status active, ends_at set from the duration, and yes, no, and abstain counts at zero. A signed-in session is required. The row is not an XRPL transaction.",
+      },
+      {
+        label: "What happens next",
+        body: "The new proposal is live for voting immediately. Members cast Yes, No, or Abstain with escrow-backed voting power until the end date. Submitting a proposal does not move XRP or change your escrow.",
+      },
+    ],
+  },
+  {
+    id: "delegate",
+    step: "10",
     title: "Voting power delegation",
     href: "/governance",
     hrefLabel: "Open DAO Governance",
