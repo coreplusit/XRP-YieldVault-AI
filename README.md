@@ -2,8 +2,8 @@
 
 A decentralized, AI-driven yield optimization and vault management platform built natively for the XRP Ledger (XRPL) ecosystem. It combines automated on-chain risk scoring, real-time APY analytics, and non-custodial Web3 wallet integration to optimize liquidity deployment across XRPL protocols.
 
-👉 **Live Application**: [https://139.59.94.12.nip.io](https://139.59.94.12.nip.io)  
-👉 **Interactive Platform Guide**: [https://139.59.94.12.nip.io/guide](https://139.59.94.12.nip.io/guide)
+ **Live Application**: [https://139.59.94.12.nip.io](https://139.59.94.12.nip.io)  
+ **Interactive Platform Guide**: [https://139.59.94.12.nip.io/guide](https://139.59.94.12.nip.io/guide)
 
 ---
 
