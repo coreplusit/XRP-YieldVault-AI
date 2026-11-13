@@ -64,7 +64,11 @@ export function isBenignProviderRpcError(error: unknown): boolean {
     message.includes("xrpl_getaccounts") ||
     message.includes("internal error") ||
     message.includes("unauthorized") ||
-    message.includes("eip1559")
+    message.includes("eip1559") ||
+    message.includes("read only property") ||
+    message.includes("readonly property") ||
+    message.includes("failed to login with auth") ||
+    message.includes("failed to connect with wallet")
   );
 }
 

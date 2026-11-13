@@ -16,13 +16,10 @@ import {
   type IProvider,
   type UserInfo,
 } from "@web3auth/modal";
-import { XrplPrivateKeyProvider } from "@web3auth/modal/providers/xrpl-provider";
 
 import {
   getWeb3AuthClientId,
-  getXrplTestnetChainConfig,
   WEB3AUTH_NETWORK_TARGET,
-  XRPL_TESTNET_CHAIN_ID,
 } from "@/lib/web3auth/config";
 import { withoutInjectedEthereum } from "@/lib/web3auth/ethereumGuard";
 import {
@@ -118,12 +115,25 @@ function logAuthIssue(scope: string, message: string): void {
   console.warn(`[Web3Auth] ${scope}:`, message);
 }
 
+/**
+ * True when Web3Auth/Auth threw a known frozen-JRPC / transient auth noise error.
+ * @param error - Unknown thrown value.
+ */
+function isReadonlyAuthBridgeError(error: unknown): boolean {
+  const message = toErrorMessage(error, "").toLowerCase();
+  return (
+    message.includes("read only property") ||
+    message.includes("readonly property") ||
+    message.includes("failed to login with auth") ||
+    message.includes("failed to connect with wallet") ||
+    message.includes("walletloginerror")
+  );
+}
+
 const AUTH_CONSOLE_FILTER = "__yieldvaultAuthConsoleFilter";
 
 /**
- * Keeps Next.js from turning Web3Auth's expired-session console.error
- * into a red dev overlay. Must stay installed — restoring console.error
- * during Strict Mode cleanup lets the overlay through mid-init.
+ * Keeps Next.js from turning Web3Auth console.error noise into red overlays.
  */
 function installAuthConsoleFilter(): void {
   if (typeof window === "undefined") return;
@@ -134,7 +144,12 @@ function installAuthConsoleFilter(): void {
   if (current[AUTH_CONSOLE_FILTER]) return;
 
   const wrapped = ((...args: unknown[]): void => {
-    if (args.some((arg) => isStaleWeb3AuthSessionError(arg))) {
+    if (
+      args.some(
+        (arg) =>
+          isStaleWeb3AuthSessionError(arg) || isReadonlyAuthBridgeError(arg),
+      )
+    ) {
       return;
     }
     current.apply(window.console, args);
@@ -150,7 +165,6 @@ if (typeof window !== "undefined") {
 
 /**
  * Resolves the active provider after a v11 Connection / connector login.
- * Prefer ethereumProvider (routes to XrplPrivateKeyProvider), then AUTH connector.
  * @param instance - Initialized Web3Auth instance.
  */
 function resolveActiveProvider(instance: Web3Auth): IProvider | null {
@@ -163,7 +177,8 @@ function resolveActiveProvider(instance: Web3Auth): IProvider | null {
 
 /**
  * Web3Auth v11 Auth connector on Sapphire Devnet + Google login.
- * XRPL keys still come from private_key so existing Testnet addresses stay stable.
+ * Chains come from the Embedded Wallets dashboard. XRPL addresses are still
+ * derived locally from `private_key` so existing Testnet wallets stay stable.
  */
 export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
   const [web3auth, setWeb3auth] = useState<Web3Auth | null>(null);
@@ -219,23 +234,21 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
   useEffect(() => {
     let cancelled = false;
 
-    /**
-     * Suppresses non-critical provider RPC / cancellation noise as overlays.
-     * @param event - Browser unhandledrejection event.
-     */
     const handleUnhandledRejection = (event: PromiseRejectionEvent): void => {
-      if (isIgnorableAuthBridgeError(event.reason)) {
+      if (
+        isIgnorableAuthBridgeError(event.reason) ||
+        isReadonlyAuthBridgeError(event.reason)
+      ) {
         event.preventDefault();
         event.stopImmediatePropagation();
       }
     };
 
-    /**
-     * Suppresses injected-wallet / MetaMask window errors during Google login.
-     * @param event - Browser error event.
-     */
     const handleWindowError = (event: ErrorEvent): void => {
-      if (isIgnorableAuthBridgeError(event.error ?? event.message)) {
+      if (
+        isIgnorableAuthBridgeError(event.error ?? event.message) ||
+        isReadonlyAuthBridgeError(event.error ?? event.message)
+      ) {
         event.preventDefault();
         event.stopImmediatePropagation();
       }
@@ -245,27 +258,17 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
     window.addEventListener("error", handleWindowError, true);
     installAuthConsoleFilter();
 
-    /**
-     * Initializes Web3Auth modal SDK with XRPL private-key provider.
-     */
     const init = async (): Promise<void> => {
       const bootInstance = (): Web3Auth => {
         const clientId = getWeb3AuthClientId();
-        const chain = getXrplTestnetChainConfig();
-        const privateKeyProvider = new XrplPrivateKeyProvider({
-          config: {
-            chain,
-            chains: [chain],
-            keyExportEnabled: true,
-          },
-        });
-
         return new Web3Auth({
           clientId,
           web3AuthNetwork: WEB3AUTH_NETWORK_TARGET,
-          privateKeyProvider,
-          chains: [chain],
-          defaultChainId: XRPL_TESTNET_CHAIN_ID,
+          // Dashboard-managed chains only. Avoid XrplPrivateKeyProvider here —
+          // its JRPC middleware freezes request ids and breaks Google login.
+          uiConfig: {
+            uxMode: "popup",
+          },
         });
       };
 
@@ -305,7 +308,10 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
           }
         }
       } catch (initError: unknown) {
-        if (isIgnorableAuthBridgeError(initError)) {
+        if (
+          isIgnorableAuthBridgeError(initError) ||
+          isReadonlyAuthBridgeError(initError)
+        ) {
           clearStaleWeb3AuthStorage();
           logAuthIssue(
             "Init noise suppressed",
@@ -355,10 +361,13 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
     setError(null);
 
     try {
+      // Fresh mutable params — Auth connector freezes/mutates login payloads.
+      const loginParams = {
+        authConnection: AUTH_CONNECTION.GOOGLE,
+      };
+
       const connection = await withoutInjectedEthereum(async () =>
-        web3auth.connectTo(WALLET_CONNECTORS.AUTH, {
-          authConnection: AUTH_CONNECTION.GOOGLE,
-        }),
+        web3auth.connectTo(WALLET_CONNECTORS.AUTH, { ...loginParams }),
       );
 
       const connectedProvider =
@@ -377,35 +386,25 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
         return false;
       }
 
-      if (isInjectedWalletExtensionError(loginError)) {
+      // After a noisy auth bridge error, the session may still be usable.
+      if (
+        isInjectedWalletExtensionError(loginError) ||
+        isBenignProviderRpcError(loginError) ||
+        isReadonlyAuthBridgeError(loginError)
+      ) {
         logAuthIssue(
           "login",
-          "Ignored MetaMask/injected-wallet noise during Google login.",
+          `Recovering after auth bridge noise: ${toErrorMessage(loginError, "noise")}`,
         );
         const activeProvider = resolveActiveProvider(web3auth);
-        if (activeProvider) {
+        if (activeProvider || web3auth.connected) {
           try {
-            await hydrateFromProvider(activeProvider, web3auth);
-            return true;
+            if (activeProvider) {
+              await hydrateFromProvider(activeProvider, web3auth);
+              return true;
+            }
           } catch {
             // Fall through.
-          }
-        }
-        return false;
-      }
-
-      if (isBenignProviderRpcError(loginError)) {
-        logAuthIssue(
-          "connectTo",
-          "Benign RPC noise; hydrating from active provider.",
-        );
-        const activeProvider = resolveActiveProvider(web3auth);
-        if (activeProvider) {
-          try {
-            await hydrateFromProvider(activeProvider, web3auth);
-            return true;
-          } catch {
-            // Fall through to user-facing error.
           }
         }
       }
@@ -421,7 +420,6 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
 
   /**
    * Re-syncs the logged-in Web3Auth identity into public.users and patches session.
-   * Used by History / Dashboard when dbUser was null after a transient RLS/network miss.
    */
   const ensureDbUser = useCallback(async (): Promise<YieldVaultUser | null> => {
     if (!session?.xrplAddress || !provider) {
@@ -463,7 +461,8 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
     } catch (logoutError: unknown) {
       if (
         !isBenignProviderRpcError(logoutError) &&
-        !isUserCancellationError(logoutError)
+        !isUserCancellationError(logoutError) &&
+        !isReadonlyAuthBridgeError(logoutError)
       ) {
         const message = toErrorMessage(logoutError, "Logout failed");
         logAuthIssue("logout error", message);
