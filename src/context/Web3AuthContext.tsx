@@ -9,20 +9,20 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Web3AuthNoModal } from "@web3auth/no-modal";
 import {
-  CHAIN_NAMESPACES,
-  WALLET_ADAPTERS,
+  AUTH_CONNECTION,
+  WALLET_CONNECTORS,
+  Web3Auth,
   type IProvider,
   type UserInfo,
-} from "@web3auth/base";
-import { AuthAdapter, LOGIN_PROVIDER } from "@web3auth/auth-adapter";
-import { CommonPrivateKeyProvider } from "@web3auth/base-provider";
+} from "@web3auth/modal";
+import { XrplPrivateKeyProvider } from "@web3auth/modal/providers/xrpl-provider";
 
 import {
-  getPrivateKeyTransportChainConfig,
   getWeb3AuthClientId,
+  getXrplTestnetChainConfig,
   WEB3AUTH_NETWORK_TARGET,
+  XRPL_TESTNET_CHAIN_ID,
 } from "@/lib/web3auth/config";
 import { withoutInjectedEthereum } from "@/lib/web3auth/ethereumGuard";
 import {
@@ -37,18 +37,6 @@ import {
 import { establishYieldVaultSession } from "@/lib/auth/sessionClient";
 import { applyYieldVaultSession } from "@/lib/supabase/client";
 import type { YieldVaultUser } from "@/lib/supabase/users";
-
-/**
- * OpenLogin adapter key.
- * In Web3Auth v9+, OpenLogin was renamed to AUTH (`WALLET_ADAPTERS.AUTH`).
- */
-const OPENLOGIN_ADAPTER =
-  (
-    WALLET_ADAPTERS as Record<
-      string,
-      (typeof WALLET_ADAPTERS)[keyof typeof WALLET_ADAPTERS]
-    >
-  ).OPENLOGIN ?? WALLET_ADAPTERS.AUTH;
 
 /** Authenticated Web3Auth session exposed to the UI. */
 export interface Web3AuthSession {
@@ -67,7 +55,7 @@ interface Web3AuthContextValue {
   session: Web3AuthSession | null;
   /** Active Web3Auth provider used for XRPL key export / signing. */
   provider: IProvider | null;
-  /** Triggers Google / Gmail OpenLogin (no modal) via Web3Auth.
+  /** Triggers Google login via Web3Auth Auth connector (no modal UI).
    *  @returns true when a session was successfully hydrated. */
   loginWithGoogle: () => Promise<boolean>;
   /**
@@ -161,11 +149,24 @@ if (typeof window !== "undefined") {
 }
 
 /**
- * Web3Auth no-modal provider for Sapphire Devnet + Google OpenLogin.
- * Uses CommonPrivateKeyProvider so login never hits Ethereum EIP-1559 RPC.
+ * Resolves the active provider after a v11 Connection / connector login.
+ * Prefer ethereumProvider (routes to XrplPrivateKeyProvider), then AUTH connector.
+ * @param instance - Initialized Web3Auth instance.
+ */
+function resolveActiveProvider(instance: Web3Auth): IProvider | null {
+  return (
+    instance.connection?.ethereumProvider ??
+    instance.getConnector(WALLET_CONNECTORS.AUTH)?.provider ??
+    null
+  );
+}
+
+/**
+ * Web3Auth v11 Auth connector on Sapphire Devnet + Google login.
+ * XRPL keys still come from private_key so existing Testnet addresses stay stable.
  */
 export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
-  const [web3auth, setWeb3auth] = useState<Web3AuthNoModal | null>(null);
+  const [web3auth, setWeb3auth] = useState<Web3Auth | null>(null);
   const [provider, setProvider] = useState<IProvider | null>(null);
   const [session, setSession] = useState<Web3AuthSession | null>(null);
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
@@ -175,12 +176,12 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
   /**
    * Hydrates app session state from an authenticated Web3Auth provider.
    * @param activeProvider - Connected Web3Auth provider instance.
-   * @param instance - Initialized Web3Auth no-modal instance.
+   * @param instance - Initialized Web3Auth instance.
    */
   const hydrateFromProvider = useCallback(
     async (
       activeProvider: IProvider,
-      instance: Web3AuthNoModal,
+      instance: Web3Auth,
     ): Promise<void> => {
       let userInfo: Partial<UserInfo> = {};
       try {
@@ -230,7 +231,7 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
     };
 
     /**
-     * Suppresses matching window ErrorEvents from the auth bridge.
+     * Suppresses injected-wallet / MetaMask window errors during Google login.
      * @param event - Browser error event.
      */
     const handleWindowError = (event: ErrorEvent): void => {
@@ -245,63 +246,41 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
     installAuthConsoleFilter();
 
     /**
-     * Initializes Web3Auth no-modal + Auth (OpenLogin) with key-only provider.
+     * Initializes Web3Auth modal SDK with XRPL private-key provider.
      */
     const init = async (): Promise<void> => {
-      const bootInstance = (): {
-        instance: Web3AuthNoModal;
-        authAdapter: AuthAdapter;
-      } => {
+      const bootInstance = (): Web3Auth => {
         const clientId = getWeb3AuthClientId();
-        const chainConfig = getPrivateKeyTransportChainConfig();
-
-        if (chainConfig.chainNamespace !== CHAIN_NAMESPACES.OTHER) {
-          throw new Error(
-            `Expected CHAIN_NAMESPACES.OTHER for key transport, got: ${chainConfig.chainNamespace}`,
-          );
-        }
-
-        const privateKeyProvider = new CommonPrivateKeyProvider({
+        const chain = getXrplTestnetChainConfig();
+        const privateKeyProvider = new XrplPrivateKeyProvider({
           config: {
-            chainConfig,
+            chain,
+            chains: [chain],
             keyExportEnabled: true,
           },
         });
 
-        const instance = new Web3AuthNoModal({
+        return new Web3Auth({
           clientId,
           web3AuthNetwork: WEB3AUTH_NETWORK_TARGET,
           privateKeyProvider,
+          chains: [chain],
+          defaultChainId: XRPL_TESTNET_CHAIN_ID,
         });
-
-        const authAdapter = new AuthAdapter({
-          adapterSettings: {
-            clientId,
-            network: WEB3AUTH_NETWORK_TARGET,
-            uxMode: "popup",
-          },
-          privateKeyProvider,
-        });
-
-        return { instance, authAdapter };
       };
 
-      const connectInstance = async (
-        instance: Web3AuthNoModal,
-        authAdapter: AuthAdapter,
-      ): Promise<void> => {
+      const connectInstance = async (instance: Web3Auth): Promise<void> => {
         installAuthConsoleFilter();
         await withoutInjectedEthereum(async () => {
-          instance.configureAdapter(authAdapter);
           await instance.init();
         });
       };
 
       try {
-        let { instance, authAdapter } = bootInstance();
+        let instance = bootInstance();
 
         try {
-          await connectInstance(instance, authAdapter);
+          await connectInstance(instance);
         } catch (firstError: unknown) {
           if (!isStaleWeb3AuthSessionError(firstError)) {
             throw firstError;
@@ -311,16 +290,19 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
             "Clearing expired Web3Auth storage and retrying init.",
           );
           clearStaleWeb3AuthStorage();
-          ({ instance, authAdapter } = bootInstance());
-          await connectInstance(instance, authAdapter);
+          instance = bootInstance();
+          await connectInstance(instance);
         }
 
         if (cancelled) return;
 
         setWeb3auth(instance);
 
-        if (instance.connected && instance.provider) {
-          await hydrateFromProvider(instance.provider, instance);
+        if (instance.connected) {
+          const activeProvider = resolveActiveProvider(instance);
+          if (activeProvider) {
+            await hydrateFromProvider(activeProvider, instance);
+          }
         }
       } catch (initError: unknown) {
         if (isIgnorableAuthBridgeError(initError)) {
@@ -360,8 +342,7 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
   }, [hydrateFromProvider]);
 
   /**
-   * Google / Gmail sign-in via OpenLogin adapter — bypasses Web3Auth Modal.
-   * Does not touch Ethereum RPC (CommonPrivateKeyProvider only exposes private_key).
+   * Google sign-in via Auth connector — bypasses the Web3Auth modal UI.
    * @returns true when the session was hydrated successfully (caller may redirect).
    */
   const loginWithGoogle = useCallback(async (): Promise<boolean> => {
@@ -374,12 +355,14 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
     setError(null);
 
     try {
-      // Google OpenLogin only — never call MetaMask even if the extension is installed.
-      const connectedProvider = await withoutInjectedEthereum(async () =>
-        web3auth.connectTo(OPENLOGIN_ADAPTER, {
-          loginProvider: LOGIN_PROVIDER.GOOGLE,
+      const connection = await withoutInjectedEthereum(async () =>
+        web3auth.connectTo(WALLET_CONNECTORS.AUTH, {
+          authConnection: AUTH_CONNECTION.GOOGLE,
         }),
       );
+
+      const connectedProvider =
+        connection?.ethereumProvider ?? resolveActiveProvider(web3auth);
 
       if (!connectedProvider) {
         console.info("[Web3Auth] Google login cancelled (no provider).");
@@ -399,9 +382,10 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
           "login",
           "Ignored MetaMask/injected-wallet noise during Google login.",
         );
-        if (web3auth.provider) {
+        const activeProvider = resolveActiveProvider(web3auth);
+        if (activeProvider) {
           try {
-            await hydrateFromProvider(web3auth.provider, web3auth);
+            await hydrateFromProvider(activeProvider, web3auth);
             return true;
           } catch {
             // Fall through.
@@ -410,16 +394,19 @@ export function Web3AuthProvider({ children }: Web3AuthProviderProps) {
         return false;
       }
 
-      if (isBenignProviderRpcError(loginError) && web3auth.provider) {
+      if (isBenignProviderRpcError(loginError)) {
         logAuthIssue(
           "connectTo",
           "Benign RPC noise; hydrating from active provider.",
         );
-        try {
-          await hydrateFromProvider(web3auth.provider, web3auth);
-          return true;
-        } catch {
-          // Fall through to user-facing error.
+        const activeProvider = resolveActiveProvider(web3auth);
+        if (activeProvider) {
+          try {
+            await hydrateFromProvider(activeProvider, web3auth);
+            return true;
+          } catch {
+            // Fall through to user-facing error.
+          }
         }
       }
 

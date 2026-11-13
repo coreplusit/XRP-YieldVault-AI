@@ -2,7 +2,7 @@
 
 import { AlertTriangle, Eye, EyeOff, KeyRound, X } from "lucide-react";
 import { useCallback, useState } from "react";
-import type { IProvider } from "@web3auth/base";
+import type { IProvider } from "@web3auth/modal";
 
 import { CopyButton } from "@/components/ui/CopyButton";
 import { getXrplWalletFromProvider } from "@/lib/web3auth/xrpl";

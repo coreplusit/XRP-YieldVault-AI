@@ -1,4 +1,4 @@
-import type { IProvider } from "@web3auth/base";
+import type { IProvider } from "@web3auth/modal";
 import { Wallet } from "xrpl";
 
 const PRIVATE_KEY_METHODS = ["private_key", "eth_private_key"] as const;

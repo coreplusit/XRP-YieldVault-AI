@@ -1,7 +1,7 @@
 "use client";
 
 import { sign } from "ripple-keypairs";
-import type { IProvider } from "@web3auth/base";
+import type { IProvider } from "@web3auth/modal";
 
 import {
   buildFaucetMessage,

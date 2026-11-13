@@ -2,7 +2,7 @@
 
 import { AlertTriangle, Loader2, Lock, Sparkles } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
-import type { IProvider } from "@web3auth/base";
+import type { IProvider } from "@web3auth/modal";
 
 import { appConfig } from "@/lib/config/env";
 import { insertVaultDeposit } from "@/lib/supabase/deposits";

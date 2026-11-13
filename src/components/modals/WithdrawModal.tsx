@@ -9,7 +9,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import type { IProvider } from "@web3auth/base";
+import type { IProvider } from "@web3auth/modal";
 
 import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { isValidClassicAddress } from "@/lib/governance/delegation";

@@ -12,14 +12,7 @@ const nextConfig: NextConfig = {
       static: 300,
     },
   },
-  transpilePackages: [
-    "@web3auth/modal",
-    "@web3auth/no-modal",
-    "@web3auth/base",
-    "@web3auth/base-provider",
-    "@web3auth/auth-adapter",
-    "@web3auth/ethereum-provider",
-  ],
+  transpilePackages: ["@web3auth/modal", "@web3auth/no-modal"],
   webpack: (config) => {
     config.resolve.fallback = {
       ...config.resolve.fallback,
